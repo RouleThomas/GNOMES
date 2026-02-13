@@ -1,4 +1,4 @@
-name: normdb_v3
+name: GNOMES
 channels:
   - conda-forge
   - bioconda
@@ -352,4 +352,4 @@ dependencies:
   - zstd=1.5.7
   - pip:
     - cython==0.29.37
-prefix: /home/roulet/anaconda3/envs/normdb_v3
+prefix: /home/roulet/anaconda3/envs/GNOMES
