@@ -69,24 +69,31 @@ GNOMES is a **two-step method**:
 
 GNOMES can be installed through **conda** (recommended).
 
-### Conda
+### Conda/Mamba
 
 ```bash
-# 1) Clone the repo
+# Clone the repo
 git clone https://github.com/RouleThomas/GNOMES.git
 cd GNOMES
 
-# 2) Create conda env
+# Installation
+## Conda
 conda env create -f env/GNOMES-environment.yml
+## Mamba
+mamba env create -f env/GNOMES-environment.yml
+
 conda activate GNOMES
 
-# 3) Install dependencies
+
+# Install dependencies
 pip install -e .
 
 # Test
 GNOMES norm --help
 GNOMES diff --help
 ```
+
+
 
 
 ### XXX something else?
