@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gnomes"
+version = "0.1.0"
+description = "Genome-wide NOrmalization of Mapped Epigenomic Signals"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.scripts]
+GNOMES = "gnomes.cli:main"
