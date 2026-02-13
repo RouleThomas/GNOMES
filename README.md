@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/GNOMES_logo1.png" alt="GNOMES logo" width="520">
+  <img src="assets/GNOMES_logo1.png" alt="GNOMES logo" width="850">
 </p>
 
 <h1 align="center">GNOMES</h1>
@@ -16,7 +16,8 @@
   <a href="#quick-start">Quick start</a> •
   <a href="#inputs">Inputs</a> •
   <a href="#outputs">Outputs</a> •
-  <a href="#troubleshooting">Troubleshooting</a> •
+  <a href="#How-GNOMES-Works">How GNOMES works</a> •
+  <a href="#contributing">Troubleshooting</a> •
   <a href="#citation">Citation</a>
 </p>
 
@@ -215,7 +216,7 @@ significant regions split by direction
 full command log + exact tool calls for reproducibility
 
 
-## What GNOMES is doing
+## How GNOMES works
 
 ### Normalization strategy
 
@@ -254,7 +255,7 @@ Please include:
 
 If you use GNOMES in your work, please cite:
 
-Roule T. et al. GNOMES: Genome-wide NOrmalization of Mapped Epigenomic Signals. [Journal] (YEAR).
+***Roule T. et al. GNOMES: Genome-wide NOrmalization of Mapped Epigenomic Signals. [Journal] (YEAR).***
 
 (Preprint / DOI coming soon.)
 
