@@ -11,12 +11,12 @@
 
 <p align="center">
   <a href="#overview">Overview</a> •
-  <a href="#two-step-workflow">Two-step workflow</a> •
+  <a href="#workflow-and-methodology">Workflow and methodology</a> •
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick start</a> •
+  <a href="#command-examples">Command examples</a> •
   <a href="#inputs">Inputs</a> •
   <a href="#outputs">Outputs</a> •
-  <a href="#How-GNOMES-Works">How GNOMES works</a> •
   <a href="#contributing">Troubleshooting</a> •
   <a href="#citation">Citation</a>
 </p>
@@ -34,42 +34,56 @@ GNOMES is designed for **Cut&Run** and **ChIP-seq** (Single-End or Paired-End), 
 
 ---
 
-## Two-step workflow
+## Workflow and methodology
 
-GNOMES is a **two-step method**:
+GNOMES is a **two-step method**; signal normalization followed by differential binding analysis:
 
 ### **Step 1 — Normalization (`GNOMES norm`)**
-- BAM → raw bigWig → bedGraph (optional blacklist filtering)
-- Identify local maxima per sample
-- Compute the 99th percentile of local signal maxima per sample
-- Normalize signals
-- Generate:
-  - normalized bigWigs (`*.norm99.bw`)
-  - scaling factors table (`scaling_factors.tsv`)
-  - median tracks per (condition, target)
-  - QC plots (PCA + correlation heatmap) for **raw** and **normalized** bigWigs
+
+**Goal**: Generate scaled bigWig tracks across samples.
+
+**Pipeline**:
+1. Convert BAM → raw bigWig → bedGraph (optional blacklist filtering)
+2. Identify local maxima in each bedGraph
+3. Compute the 99th percentile (P99) of local signal maxima per sample
+4. Within each target, select a reference sample and compute scaling factor (SF): `SF(sample) = P99(reference_sample) / P99(sample)`
+5. Apply SF to generate normalized signal tracks
+
+**Outputs**:
+- normalized bigWigs (`*.norm99.bw`)
+- scaling factors table (`scaling_factors.tsv`)
+- median tracks per (condition, target)
+- QC plots (PCA + correlation heatmap) for **raw** and **normalized** bigWigs
+
+This percentile-based normalization is designed to stabilize signal distributions without assuming equal total occupancy across samples.
+
 
 ### **Step 2 — Differential binding (`GNOMES diff`)**
-- Use either:
-  - user-provided BED regions (`--regions`)
-  - or generate a MACS2 pooled-per-condition peaks → qscore filter → merged consensus (`--call-peaks`)
-- Quantify per-region signal from normalized bigWigs
-- Run **DESeq2** differential analysis
-- Generate:
-  - volcano + MA plot
-  - PCA + sample correlation heatmap (from DESeq2 VST)
-  - significant gain/loss region tables (TSV)
-  - **optional** deepTools heatmap + profile plot over significant regions
-  - **optional** PCA + sample correlation heatmap (from DESeq2 VST) for RAW bigWig files
 
+**Goal**: Identify regions with significant binding changes (ie. gained or lost) between biological conditions.
+
+GNOMES supports two strategies:
+- User-provided BED regions (`--regions`)
+- Automatically generated MACS2 consensus peaks (`--call-peaks`)
+
+  
+**Pipeline**:
+1. Quantify per-region signal from normalized bigWigs
+2. Convert signal into count-like matrices
+3. Perform differential analysis using DESeq2
+
+**Outputs**:
+- volcano + MA plot
+- PCA + sample correlation heatmap (from DESeq2 VST)
+- significant gain/loss region tables (TSV)
+- **optional** deepTools heatmap + profile plot over significant regions
+- **optional** PCA + sample correlation heatmap (from DESeq2 VST) for RAW bigWig files
 ---
 
 
 ## Installation
 
-GNOMES can be installed through **conda** (recommended).
-
-### Conda/Mamba
+### Option 1 — Conda (recommended)
 
 ```bash
 # Clone the repo
@@ -96,7 +110,9 @@ GNOMES diff --help
 
 
 
-### XXX something else?
+### Option 2 — Apptainer / Singularity
+
+
 
 
 
@@ -109,20 +125,73 @@ GNOMES is a two-step pipeline: **normalize** first, then **diff**.
 
 ```
 GNOMES norm \
-  --meta meta/samples.tsv \
-  --outdir output/gnomes_run \
-  --blacklist meta/hg38-blacklist.v2.bed \
-  --chrom-sizes meta/GRCh38_chrom_sizes.tab \
-  --threads 8 \
-  --mode SE \
-  --se-fragment-length 200 \
-  --reference auto
+  --meta <metadata.tsv> \
+  --outdir <output_directory> \
+  --chrom-sizes <chrom_sizes.txt> \
+  --mode <SE|PE>
 ```
 
 
 ### **Step 2 — Differential binding (using your own BED regions)**
 
 ```
+GNOMES diff \
+  --regions <regions.bed> \
+  --meta <metadata.tsv> \
+  --bigwig-dir <normalized_bigwig_directory> \
+  --contrast <column:group1:group2> \
+  --target <mark_or_TF> \
+  --outdir <diff_output_directory>
+```
+
+### **Step 2 — Differential binding (MACS2 consensus peaks)**
+
+```
+GNOMES diff \
+  --call-peaks \
+  --meta <metadata.tsv> \
+  --bigwig-dir <normalized_bigwig_directory> \
+  --contrast <column:group1:group2> \
+  --target <mark_or_TF> \
+  --outdir <diff_output_directory>
+```
+
+
+## Command examples
+
+**Example 1 — Single-End (with blacklist) and Differential binding using user BED regions**
+
+```bash
+GNOMES norm \
+  --meta meta/samples.tsv \
+  --outdir output/gnomes_run \
+  --blacklist meta/hg38-blacklist.v2.bed \
+  --chrom-sizes meta/GRCh38_chrom_sizes.tab \
+  --threads 8 \
+  --mode SE \
+  --se-fragment-length 200
+
+GNOMES diff \
+  --meta meta/samples.tsv \
+  --regions regions/promoters.bed \
+  --bigwig-dir output/gnomes_run/06_normalized_bigwig \
+  --contrast condition:KO:WT \
+  --target H3K27me3 \
+  --outdir output/gnomes_run_diff \
+  --alpha 0.05 \
+  --lfc 0.5
+```
+
+**Example 2 — Paired-End (without blacklist) and Differential binding using MACS2 consensus peaks**
+
+```bash
+GNOMES norm \
+  --meta meta/samples.tsv \
+  --outdir output/gnomes_run \
+  --chrom-sizes meta/GRCh38_chrom_sizes.tab \
+  --threads 8 \
+  --mode PE
+
 GNOMES diff \
   --meta meta/samples.tsv \
   --call-peaks \
@@ -132,14 +201,11 @@ GNOMES diff \
   --outdir output/gnomes_run_diff \
   --alpha 0.05 \
   --lfc 0.5 \
-  --min-counts 100 \
   --macs2-mode broad \
   --macs2-qvalue 0.005 \
   --macs2-merge 100
-
 ```
 
-### **Step 2 — Differential binding (MACS2 consensus peaks)**
 
 
 ## Inputs
@@ -223,28 +289,6 @@ significant regions split by direction
 full command log + exact tool calls for reproducibility
 
 
-## How GNOMES works
-
-### Normalization strategy
-
-GNOMES:
-1. converts BAM → bedGraph
-2. finds local maxima along each bedGraph
-3. computes the 99th percentile of maxima scores per sample (P99)
-4. within each target, uses a reference sample and scales other samples by:
-```
-scaling_factor(sample) = P99(reference_sample) / P99(sample)
-```
-This yields normalized bedGraphs / bigWigs that are robust to global occupancy shifts.
-
-### Differential binding strategy
-
-GNOMES converts bigWig signal into per-region counts (computeMatrix) and runs DESeq2:
-- VST transform for PCA / correlation
-- LFC shrinkage (apeglm if available)
-- significant gain/loss calls based on:
-    - `padj < alpha`
-    - `|log2FoldChange| >= lfc`
 
 
 ## Contributing

@@ -810,7 +810,7 @@ def main():
     log_path = os.path.join(args.outdir, "normdb_diffbind.log")
 
     walker = GnomeWalker(enabled=(not args.no_walk), fps=10, track_width=30)
-    ctrl = DelayedWalkController(walker, delay_s=8.0)
+    ctrl = DelayedWalkController(walker, delay_s=10.0)
 
     def _fail(msg: str):
         ctrl.end_step()
@@ -900,7 +900,7 @@ def main():
 
             bw_paths, bw_labels = collect_bigwigs(meta_t, args.bigwig_dir, suffix=".norm99.bw", ctrl=ctrl)
 
-            log_done(f"Found {len(bw_paths)} normalized bigWigs", ctrl=ctrl)
+            log_done(f"Found {len(bw_paths)} normalized bigWigs", step, ctrl=ctrl)
             ctrl.end_step()
 
             # -------------------------
@@ -913,7 +913,7 @@ def main():
 
                 bw_paths_raw, bw_labels_raw = collect_bigwigs(meta_t, args.bigwig_dir_raw, suffix=".bw", ctrl=ctrl)
 
-                log_done(f"Found {len(bw_paths_raw)} RAW bigWigs", ctrl=ctrl)
+                log_done(f"Found {len(bw_paths_raw)} RAW bigWigs", step, ctrl=ctrl)
                 ctrl.end_step()
 
             # -------------------------
