@@ -12,6 +12,7 @@ import math
 import pandas as pd
 
 REQUIRED_COLS = ["sample_id", "bam", "condition", "target"]
+OPTIONAL_CONTROL_COL = "bam_control"
 
 
 # -----------------------------
@@ -320,6 +321,10 @@ def read_meta(meta_path):
     if missing:
         die(f"Metadata missing required columns: {missing} (required: {REQUIRED_COLS})")
 
+    # Ensure optional control column exists
+    if OPTIONAL_CONTROL_COL not in df.columns:
+        df[OPTIONAL_CONTROL_COL] = ""
+
     if (df["sample_id"].str.strip() == "").any():
         die("Metadata contains empty sample_id.")
     if df["sample_id"].duplicated().any():
@@ -331,6 +336,12 @@ def read_meta(meta_path):
     missing_bams = [b for b in df["bam"].tolist() if b and not os.path.exists(b)]
     if missing_bams:
         die("Some BAMs listed in meta do not exist:\n" + "\n".join(sorted(set(missing_bams))))
+
+    # Validate bam_control if provided (non-empty)
+    ctrl_vals = df[OPTIONAL_CONTROL_COL].astype(str).str.strip().tolist()
+    missing_ctrl = [b for b in ctrl_vals if b and not os.path.exists(b)]
+    if missing_ctrl:
+        die("Some bam_control BAMs listed in meta do not exist:\n" + "\n".join(sorted(set(missing_ctrl))))
 
     return df
 
@@ -467,7 +478,8 @@ def sort_bed(in_bed: str, out_bed: str) -> int:
             if len(p) < 3:
                 continue
             try:
-                s = int(p[1]); e = int(p[2])
+                s = int(p[1])
+                e = int(p[2])
             except ValueError:
                 continue
             rows.append((p[0], s, e))
@@ -497,12 +509,25 @@ def print_launch_summary(args):
         lines.append("  - bigwig-dir-raw: (not provided; raw PCA/heatmap skipped)")
 
     lines.append("")
-    lines.append("DESeq2:")
-    lines.append(f"  - contrast: {args.contrast}")
-    lines.append(f"  - target: {args.target if args.target else '(auto from meta)'}")
-    lines.append(f"  - alpha (padj): {args.alpha}")
-    lines.append(f"  - lfc threshold: {args.lfc}")
-    lines.append(f"  - min-counts (rowSums): {args.min_counts}")
+    lines.append("Differential binding:")
+    lines.append(f"  - diff-method: {args.diff_method}")
+
+    if args.diff_method == "deseq2":
+        lines.append("DESeq2:")
+        lines.append(f"  - contrast: {args.contrast}")
+        lines.append(f"  - target: {args.target if args.target else '(auto from meta)'}")
+        lines.append(f"  - deseq2-alpha (padj): {args.deseq2_alpha}")
+        lines.append(f"  - deseq2-lfc: {args.deseq2_lfc}")
+        lines.append(f"  - deseq2-min-counts: {args.deseq2_min_counts}")
+        lines.append(f"  - deseq2-sizefactors: {args.deseq2_sizefactors}")
+    else:
+        lines.append("edgeR:")
+        lines.append(f"  - contrast: {args.contrast}")
+        lines.append(f"  - target: {args.target if args.target else '(auto from meta)'}")
+        lines.append(f"  - edger-alpha (FDR): {args.edger_alpha}")
+        lines.append(f"  - edger-lfc: {args.edger_lfc}")
+        lines.append(f"  - edger-min-counts: {args.edger_min_counts}")
+        lines.append(f"  - edger-norm: {args.edger_norm}")
 
     lines.append("")
     lines.append("Modes / outputs:")
@@ -520,11 +545,10 @@ def print_launch_summary(args):
         lines.append(f"  - gsize: {args.macs2_gsize}")
         lines.append(f"  - qvalue: {args.macs2_qvalue} (qscore>= {qscore_thr:.6f})")
         lines.append(f"  - peak merge -d: {args.macs2_merge}")
+        lines.append(f"  - control (bam_control): auto if present in meta (pooled per condition)")
 
     lines.append("=" * 72)
     print("\n".join(lines), flush=True)
-
-
 
 
 def print_final_gnome_summary(summary_lines):
@@ -618,9 +642,11 @@ def collect_bigwigs(meta_t: pd.DataFrame, bigwig_dir: str, *, suffix: str, ctrl=
 
 
 def run_raw_pca_corr_from_counts(*, counts_path: str, coldata_path: str, contrast_var: str,
-                                test_level: str, ref_level: str, out_pca: str, out_corr: str,
-                                outdir: str, log_fh):
+                                 test_level: str, ref_level: str, out_pca: str, out_corr: str,
+                                 outdir: str, log_fh):
     r_script_path = os.path.join(outdir, "run_pca_corr_only_rawbigwig.R")
+
+    # Diagnostic PCA/corr: keep DESeq2-style VST with estimated size factors.
     r_script = f"""
 suppressPackageStartupMessages({{
   library(DESeq2)
@@ -710,10 +736,10 @@ def main():
     print_gnome_splash()
 
     ap = argparse.ArgumentParser(
-        prog="normdb diffbind",
-        description="Diff binding on BED regions (computeMatrix-based, DESeq2) + optional deepTools plotHeatmap (normalized only) + optional MACS2 peak calling consensus regions"
+        prog="GNOMES diff",
+        description="Diff binding on BED regions (computeMatrix-based) using DESeq2 or edgeR + optional deepTools plotHeatmap (normalized only) + optional MACS2 consensus regions"
     )
-    ap.add_argument("--meta", required=True, help="samples.tsv with columns: sample_id bam condition target")
+    ap.add_argument("--meta", required=True, help="samples.tsv with columns: sample_id bam condition target [bam_control optional]")
     ap.add_argument("--regions", default=None, help="BED file of regions (chr start end). Required unless --call-peaks.")
     ap.add_argument("--call-peaks", action="store_true",
                     help="Call peaks with MACS2 (pooled per condition) and build consensus peaks. Only allowed if --regions is NOT set.")
@@ -723,11 +749,35 @@ def main():
                     help="Optional directory containing RAW bigWigs to also generate DESeq2 PCA/correlation from RAW-derived counts (expects <sample_id>.bw). NOTE: deepTools heatmap/profile is NOT run on raw.")
     ap.add_argument("--contrast", required=True, help="e.g. condition:KO:WT")
     ap.add_argument("--outdir", required=True, help="Output directory")
-    ap.add_argument("--alpha", type=float, default=0.05, help="Significance threshold for plots + signif tables")
-    ap.add_argument("--lfc", type=float, default=0.0, help="log2FC threshold for plots + signif tables")
     ap.add_argument("--target", default=None, help="If meta contains multiple targets, specify one (e.g. H3K27me3)")
-    ap.add_argument("--min-counts", type=int, default=100,
-                    help="Filter out regions with low counts: keep rowSums(counts) >= this value (default 100)")
+
+    # ---- Differential method selection ----
+    ap.add_argument("--diff-method", dest="diff_method", choices=["deseq2", "edger"], default="deseq2",
+                    help="Differential binding method (default deseq2).")
+
+    # ---- DESeq2 options (renamed + grouped) ----
+    ap.add_argument("--deseq2-alpha", type=float, default=0.05,
+                    help="DESeq2 significance threshold (padj) for plots + signif tables (default 0.05)")
+    ap.add_argument("--deseq2-lfc", type=float, default=0.0,
+                    help="DESeq2 log2FC threshold for plots + signif tables (default 0.0)")
+    ap.add_argument("--deseq2-min-counts", type=int, default=100,
+                    help="Low-count filter: keep region if max(sum(counts per condition)) >= this (default 100)")
+    ap.add_argument("--deseq2-sizefactors", choices=["auto", "none"], default="auto",
+                    help=("DESeq2 size factor behavior: "
+                          "'auto' (default) = DESeq2 estimates size factors (use when expecting gain/loss balanced). "
+                          "'none' = force sizeFactors=1 (use when expecting global unidirectional shifts)."))
+
+    # ---- edgeR options (mirrors DESeq2 style) ----
+    ap.add_argument("--edger-alpha", type=float, default=0.05,
+                    help="edgeR significance threshold (FDR) for plots + signif tables (default 0.05)")
+    ap.add_argument("--edger-lfc", type=float, default=0.0,
+                    help="edgeR log2FC threshold for plots + signif tables (default 0.0)")
+    ap.add_argument("--edger-min-counts", type=int, default=100,
+                    help="Low-count filter: keep region if max(sum(counts per condition)) >= this (default 100)")
+    ap.add_argument("--edger-norm", choices=["TMM", "TMMwsp", "RLE", "upperquartile", "none"], default="TMM",
+                    help=("edgeR normalization (calcNormFactors method): "
+                          "TMM (default), TMMwsp, RLE, upperquartile, or none. "
+                          "Use 'none' to force normalization factors to 1 (use when expecting global unidirectional shifts)."))
 
     ap.add_argument("--no-walk", action="store_true", help="Disable the GNOME walking animation")
 
@@ -807,7 +857,7 @@ def main():
     dt_dir = os.path.join(args.outdir, "04_deeptools_heatmap")
     os.makedirs(dt_dir, exist_ok=True)
 
-    log_path = os.path.join(args.outdir, "normdb_diffbind.log")
+    log_path = os.path.join(args.outdir, "GNOMES_diff.log")
 
     walker = GnomeWalker(enabled=(not args.no_walk), fps=10, track_width=30)
     ctrl = DelayedWalkController(walker, delay_s=10.0)
@@ -816,7 +866,7 @@ def main():
         ctrl.end_step()
         die(msg)
 
-    # ---- Step accounting (FIXED) ----
+    # ---- Step accounting ----
     step_plan = [
         "Reading metadata",
         "Collecting normalized bigWigs",
@@ -826,7 +876,7 @@ def main():
     step_plan.append("Preparing regions (user BED or MACS2 consensus)")
     step_plan.append("computeMatrix per sample (normalized bigWigs)")
     step_plan.append("Building count matrix (normalized)")
-    step_plan.append("DESeq2 + plots (normalized)")
+    step_plan.append(f"Differential binding + plots ({args.diff_method})")
     if args.bigwig_dir_raw is not None:
         step_plan.append("RAW bigWig DESeq2 PCA + correlation heatmap (optional)")
     if not args.no_plotHeatmap:
@@ -850,6 +900,7 @@ def main():
 
     bw_paths_raw, bw_labels_raw = None, None
     macs2_summary = None
+    macs2_used_control = False  # for end summary
 
     try:
         with open(log_path, "w") as log_fh:
@@ -917,7 +968,7 @@ def main():
                 ctrl.end_step()
 
             # -------------------------
-            # Step: Prepare regions (always a numbered step now)
+            # Step: Prepare regions
             # -------------------------
             step_num += 1
             ctrl.begin_step(f"Step {step_num}/{step_total} — {step_plan[step_num-1]}")
@@ -927,6 +978,8 @@ def main():
                 log("Calling MACS2 peaks pooled per condition and building consensus BED", ctrl=ctrl)
 
                 qscore_thr = qvalue_to_macs2_qscore(args.macs2_qvalue)
+
+                # Note: control usage is decided per-level (condition), but we enforce consistency.
                 macs2_summary = {
                     "format (-f)": args.macs2_format,
                     "gsize (-g)": args.macs2_gsize,
@@ -934,7 +987,7 @@ def main():
                     "qvalue (prob)": args.macs2_qvalue,
                     "qscore threshold (-log10(q))": f"{qscore_thr:.6f}",
                     "merge distance (bedtools -d)": args.macs2_merge,
-                    "pooling": f"All replicates pooled per {contrast_var} level (no control, --nomodel, --keep-dup auto)",
+                    "pooling": f"All replicates pooled per {contrast_var} level (auto -c if bam_control present)",
                 }
 
                 consensus_bed = os.path.join(regions_dir, "consensus_peaks.bed")
@@ -944,22 +997,46 @@ def main():
                     ctrl.set_label(f"Step {step_num}/{step_total} — MACS2: {lvl}")
                     lvl_slug = _safe_slug(lvl)
 
-                    bams = meta_t.loc[meta_t[contrast_var] == lvl, "bam"].tolist()
+                    sub = meta_t.loc[meta_t[contrast_var] == lvl].copy()
+                    bams = sub["bam"].astype(str).str.strip().tolist()
+                    bams = [b for b in bams if b]
                     if len(bams) == 0:
                         continue
+
+                    # ---- NEW: pooled controls if bam_control is provided in meta ----
+                    controls = sub[OPTIONAL_CONTROL_COL].astype(str).str.strip().tolist()
+                    any_ctrl = any(c != "" for c in controls)
+                    if any_ctrl:
+                        # enforce that ALL samples in this level have controls (avoid mixed/partial control)
+                        missing_here = [sub.iloc[i]["sample_id"] for i, c in enumerate(controls) if c == ""]
+                        if missing_here:
+                            _fail(
+                                f"bam_control is partially missing for level={lvl}. "
+                                f"Either provide bam_control for ALL samples in that level or leave all blank.\n"
+                                f"Missing control for sample_id: {missing_here}"
+                            )
+                        controls = [c for c in controls if c]
+                        macs2_used_control = True
+                    else:
+                        controls = []
 
                     lvl_outdir = os.path.join(regions_dir, f"macs2_{lvl_slug}")
                     os.makedirs(lvl_outdir, exist_ok=True)
 
                     name = f"{lvl_slug}_{_safe_slug(target)}_pool"
 
-                    cmd = ["macs2", "callpeak", "-t", *bams,
-                           "-f", args.macs2_format,
-                           "--keep-dup", "auto",
-                           "--nomodel",
-                           "-g", str(args.macs2_gsize),
-                           "--outdir", lvl_outdir,
-                           "-n", name]
+                    cmd = ["macs2", "callpeak", "-t", *bams]
+                    if controls:
+                        cmd += ["-c", *controls]  # IGG / input controls pooled per level
+
+                    cmd += [
+                        "-f", args.macs2_format,
+                        "--keep-dup", "auto",
+                        "--nomodel",
+                        "-g", str(args.macs2_gsize),
+                        "--outdir", lvl_outdir,
+                        "-n", name
+                    ]
                     if args.macs2_mode == "broad":
                         cmd.append("--broad")
 
@@ -1011,7 +1088,6 @@ def main():
 
             else:
                 log("Validating user-provided BED regions", ctrl=ctrl)
-                # Keep regions_path as provided; optionally copy to outdir for provenance
                 src = args.regions
                 dst = os.path.join(regions_dir, os.path.basename(src))
                 if os.path.abspath(src) != os.path.abspath(dst):
@@ -1023,7 +1099,6 @@ def main():
             ctrl.end_step()
 
             total_regions_used = count_bed_rows(regions_path)
-
 
             # -------------------------
             # Step: computeMatrix per sample (normalized bigWigs)
@@ -1094,12 +1169,12 @@ def main():
             ctrl.end_step()
 
             # -------------------------
-            # Step: DESeq2 + plots (normalized)
+            # Step: Differential binding (DESeq2 or edgeR) + plots
             # -------------------------
             step_num += 1
             ctrl.begin_step(f"Step {step_num}/{step_total} — {step_plan[step_num-1]}")
             step = time.time()
-            log("Running DESeq2 + plots", ctrl=ctrl)
+            log(f"Running differential binding with {args.diff_method}", ctrl=ctrl)
 
             results_path = os.path.join(args.outdir, "results_all_regions.tsv")
             gain_path = os.path.join(args.outdir, "results_signif_gain.tsv")
@@ -1108,9 +1183,10 @@ def main():
             ma_pdf = os.path.join(args.outdir, "MA.pdf")
             corr_pdf = os.path.join(args.outdir, "sample_correlation_heatmap.pdf")
             pca_pdf = os.path.join(args.outdir, "PCA_vst.pdf")
-            r_script_path = os.path.join(args.outdir, "run_deseq2.R")
+            r_script_path = os.path.join(args.outdir, f"run_{args.diff_method}.R")
 
-            r_script = f"""
+            if args.diff_method == "deseq2":
+                r_script = f"""
 suppressPackageStartupMessages({{
   library(DESeq2)
   library(tidyverse)
@@ -1118,9 +1194,10 @@ suppressPackageStartupMessages({{
   library(EnhancedVolcano)
 }})
 
-alpha <- {args.alpha}
-lfc_thr <- {args.lfc}
-min_counts <- {args.min_counts}
+alpha <- {args.deseq2_alpha}
+lfc_thr <- {args.deseq2_lfc}
+min_counts <- {args.deseq2_min_counts}
+sizefactor_mode <- "{args.deseq2_sizefactors}"
 
 counts_file <- "{counts_path}"
 coldata_file <- "{coldata_path}"
@@ -1155,10 +1232,33 @@ dds <- DESeqDataSetFromMatrix(
   design = as.formula(paste0("~ ", contrast_var))
 )
 
-keep <- rowSums(counts(dds)) >= min_counts
-dds <- dds[keep,]
+# Low-count filtering PER CONDITION:
+grp <- coldata[[contrast_var]]
+grp <- factor(grp)
+
+sum_by_grp <- sapply(levels(grp), function(g) {{
+  rowSums(count_mat[, grp == g, drop = FALSE])
+}})
+
+keep <- apply(sum_by_grp, 1, max) >= min_counts
+dds <- dds[keep, ]
+
+message("Low-count filter: kept ", sum(keep), " / ", length(keep),
+        " regions (min_counts=", min_counts, ")")
 
 dds[[contrast_var]] <- relevel(dds[[contrast_var]], ref = ref_level)
+
+# Size factor handling
+if (sizefactor_mode == "none") {{
+  sizeFactors(dds) <- rep(1, ncol(dds))
+  message("DESeq2 sizeFactors: forced to 1 (mode=none)")
+}} else {{
+  dds <- estimateSizeFactors(dds)
+  sf <- sizeFactors(dds)
+  message("DESeq2 sizeFactors: estimated (mode=auto). Range: ",
+          signif(min(sf), 4), " - ", signif(max(sf), 4))
+}}
+
 dds <- DESeq(dds)
 
 coef_name <- resultsNames(dds)[2]
@@ -1210,7 +1310,7 @@ EnhancedVolcano(
   pointSize = 1.1,
   labSize = 2.0,
   title = paste0(test_level, " vs ", ref_level),
-  subtitle = NULL,
+  subtitle = paste0("sizefactors=", sizefactor_mode),
   legendPosition = "right",
   legendLabSize = 11,
   legendIconSize = 3.5
@@ -1270,7 +1370,7 @@ p_pca <- ggplot(pca_df, aes(x=PC1, y=PC2, color=.data[[contrast_var]], label=sam
   scale_color_manual(values=cond_to_color) +
   theme_bw() +
   labs(
-    title = paste0("PCA (vst) — ref=", ref_condition),
+    title = paste0("PCA (vst) — ref=", ref_condition, " (sizefactors=", sizefactor_mode, ")"),
     x = paste0("PC1 (", round(100*summary(pca)$importance[2,1], 1), "%)"),
     y = paste0("PC2 (", round(100*summary(pca)$importance[2,2], 1), "%)")
   ) +
@@ -1280,14 +1380,195 @@ ggsave(out_pca, plot=p_pca, width=7.5, height=6.5)
 
 cormat <- cor(mat, method="pearson")
 pdf(out_corr, width=8.5, height=8.5)
-heatmap(cormat, symm=TRUE, margins=c(12,12), main="Sample correlation (vst counts)")
+heatmap(cormat, symm=TRUE, margins=c(12,12), main=paste0("Sample correlation (vst counts) — sizefactors=", sizefactor_mode))
 dev.off()
 """
+            else:
+                # edgeR implementation
+                r_script = f"""
+suppressPackageStartupMessages({{
+  library(edgeR)
+  library(tidyverse)
+  library(ggplot2)
+  library(EnhancedVolcano)
+}})
+
+alpha <- {args.edger_alpha}
+lfc_thr <- {args.edger_lfc}
+min_counts <- {args.edger_min_counts}
+norm_method <- "{args.edger_norm}"
+
+counts_file <- "{counts_path}"
+coldata_file <- "{coldata_path}"
+
+out_results <- "{results_path}"
+out_gain <- "{gain_path}"
+out_loss <- "{loss_path}"
+out_volcano <- "{volcano_pdf}"
+out_ma <- "{ma_pdf}"
+out_corr <- "{corr_pdf}"
+out_pca <- "{pca_pdf}"
+
+contrast_var <- "{contrast_var}"
+test_level <- "{contrast_test}"
+ref_level <- "{contrast_ref}"
+
+counts_df <- read.delim(counts_file, check.names=FALSE)
+stopifnot("region_id" %in% colnames(counts_df))
+
+count_mat <- counts_df %>% select(-region_id) %>% as.matrix()
+rownames(count_mat) <- counts_df$region_id
+mode(count_mat) <- "integer"
+
+coldata <- read.delim(coldata_file, check.names=FALSE)
+stopifnot("sample_id" %in% colnames(coldata))
+stopifnot(contrast_var %in% colnames(coldata))
+stopifnot(all(coldata$sample_id == colnames(count_mat)))
+
+grp <- factor(coldata[[contrast_var]])
+grp <- relevel(grp, ref = ref_level)
+
+# Low-count filtering PER CONDITION (same rule as DESeq2 mode):
+sum_by_grp <- sapply(levels(grp), function(g) {{
+  rowSums(count_mat[, grp == g, drop = FALSE])
+}})
+keep <- apply(sum_by_grp, 1, max) >= min_counts
+count_mat <- count_mat[keep, , drop=FALSE]
+
+message("Low-count filter: kept ", sum(keep), " / ", length(keep),
+        " regions (min_counts=", min_counts, ")")
+
+y <- DGEList(counts=count_mat, group=grp)
+
+if (norm_method == "none") {{
+  y$samples$norm.factors <- rep(1, ncol(count_mat))
+  message("edgeR norm.factors: forced to 1 (norm=none)")
+}} else {{
+  y <- calcNormFactors(y, method=norm_method)
+  nf <- y$samples$norm.factors
+  message("edgeR norm.factors: estimated (norm=", norm_method, "). Range: ",
+          signif(min(nf), 4), " - ", signif(max(nf), 4))
+}}
+
+# Standard edgeR GLM pipeline
+design <- model.matrix(~ grp)
+y <- estimateDisp(y, design)
+fit <- glmQLFit(y, design)
+qlf <- glmQLFTest(fit, coef=2)
+
+tt <- topTags(qlf, n=Inf)$table
+# edgeR provides: logFC, logCPM, F, PValue, FDR
+res_df <- tt %>%
+  rownames_to_column("region_id") %>%
+  separate(region_id, into=c("chr","start","end"), sep="_", remove=FALSE, convert=TRUE) %>%
+  relocate(chr, start, end, region_id) %>%
+  rename(pvalue = PValue, padj = FDR, baseMean = logCPM) %>%
+  mutate(baseMean = 2^baseMean)  # approximate CPM->linear for MA-style x-axis
+
+write.table(res_df, file=out_results, sep="\\t", quote=FALSE, row.names=FALSE)
+
+res_sig <- res_df %>%
+  filter(!is.na(padj)) %>%
+  filter(padj < alpha, abs(logFC) >= lfc_thr) %>%
+  mutate(direction = ifelse(logFC > 0, "Gain", "Loss"))
+
+write.table(res_sig %>% filter(direction=="Gain"), file=out_gain, sep="\\t", quote=FALSE, row.names=FALSE)
+write.table(res_sig %>% filter(direction=="Loss"), file=out_loss, sep="\\t", quote=FALSE, row.names=FALSE)
+
+res_plot <- res_df %>%
+  mutate(
+    padj_plot = ifelse(is.na(padj), 1, padj),
+    direction = case_when(
+      padj_plot < alpha & logFC >=  lfc_thr ~ "Gain",
+      padj_plot < alpha & logFC <= -lfc_thr ~ "Loss",
+      TRUE ~ "NS"
+    )
+  )
+
+col_map <- c("NS"="grey70", "Gain"="orange", "Loss"="skyblue")
+
+pdf(out_volcano, width=4.8, height=4.1)
+EnhancedVolcano(
+  res_plot,
+  lab = rep("", nrow(res_plot)),
+  x = "logFC",
+  y = "padj_plot",
+  pCutoff = alpha,
+  FCcutoff = lfc_thr,
+  colCustom = col_map[res_plot$direction],
+  colAlpha = 0.75,
+  pointSize = 1.1,
+  labSize = 2.0,
+  title = paste0(test_level, " vs ", ref_level, " (edgeR)"),
+  subtitle = paste0("norm=", norm_method),
+  legendPosition = "right",
+  legendLabSize = 11,
+  legendIconSize = 3.5
+) +
+  theme_bw() +
+  guides(colour = guide_legend(title = NULL), fill = guide_legend(title = NULL))
+dev.off()
+
+p_ma <- ggplot(res_plot, aes(x = baseMean, y = logFC, color = direction)) +
+  geom_point(size = 1.0, alpha = 0.75) +
+  scale_x_log10() +
+  geom_hline(yintercept = c(-lfc_thr, lfc_thr), linetype = "dashed") +
+  theme_bw() +
+  labs(
+    title = paste0("MA (edgeR): ", test_level, " vs ", ref_level),
+    x = "Mean abundance (approx)",
+    y = "Log2 fold change"
+  ) +
+  scale_color_manual(values = col_map)
+
+ggsave(out_ma, plot = p_ma, width = 5.0, height = 4.2)
+
+# PCA + correlation:
+# Use logCPM for PCA/corr (common edgeR practice)
+logcpm <- cpm(y, log=TRUE, prior.count=1)
+pca <- prcomp(t(logcpm), scale.=FALSE)
+
+pca_df <- as.data.frame(pca$x[, 1:2, drop=FALSE]) %>%
+  rownames_to_column("sample_id") %>%
+  left_join(coldata, by="sample_id")
+
+conds <- unique(pca_df[[contrast_var]])
+ref_condition <- ref_level
+
+grey_palette <- c("grey", "grey50", "grey65", "grey35", "grey80", "grey20")
+cond_to_color <- setNames(rep("grey", length(conds)), conds)
+cond_to_color[ref_condition] <- "black"
+
+others <- setdiff(conds, ref_condition)
+for (i in seq_along(others)) {{
+  cond_to_color[others[i]] <- grey_palette[min(i, length(grey_palette))]
+}}
+
+p_pca <- ggplot(pca_df, aes(x=PC1, y=PC2, color=.data[[contrast_var]], label=sample_id)) +
+  geom_point(size=3) +
+  geom_text(vjust=-0.8, size=3) +
+  scale_color_manual(values=cond_to_color) +
+  theme_bw() +
+  labs(
+    title = paste0("PCA (logCPM) — ref=", ref_condition, " (edgeR; norm=", norm_method, ")"),
+    x = paste0("PC1 (", round(100*summary(pca)$importance[2,1], 1), "%)"),
+    y = paste0("PC2 (", round(100*summary(pca)$importance[2,2], 1), "%)")
+  ) +
+  guides(color=guide_legend(title=contrast_var))
+
+ggsave(out_pca, plot=p_pca, width=7.5, height=6.5)
+
+cormat <- cor(logcpm, method="pearson")
+pdf(out_corr, width=8.5, height=8.5)
+heatmap(cormat, symm=TRUE, margins=c(12,12), main=paste0("Sample correlation (logCPM) — edgeR norm=", norm_method))
+dev.off()
+"""
+
             with open(r_script_path, "w") as f:
                 f.write(r_script)
 
             run_cmd(["Rscript", r_script_path], log_fh=log_fh)
-            log_done("DESeq2 + plots finished", step, ctrl=ctrl)
+            log_done(f"Differential binding finished ({args.diff_method})", step, ctrl=ctrl)
             ctrl.end_step()
 
             # counts of significant regions for summary
@@ -1300,7 +1581,6 @@ dev.off()
 
             # -------------------------
             # Optional Step: RAW bigWig PCA + correlation heatmap (DESeq2-style)
-            # IMPORTANT: no deepTools on raw (per your request)
             # -------------------------
             if args.bigwig_dir_raw is not None:
                 step_num += 1
@@ -1374,7 +1654,6 @@ dev.off()
 
             # -------------------------
             # Optional Step: deepTools heatmap + profile (normalized only)
-            # (NO raw deepTools generation, even if --bigwig-dir-raw is provided)
             # -------------------------
             if not args.no_plotHeatmap:
                 step_num += 1
@@ -1409,9 +1688,11 @@ dev.off()
                     region_files = []
                     region_labels = []
                     if n_gain_bed > 0:
-                        region_files.append(gain_bed); region_labels.append("Gain")
+                        region_files.append(gain_bed)
+                        region_labels.append("Gain")
                     if n_loss_bed > 0:
-                        region_files.append(loss_bed); region_labels.append("Loss")
+                        region_files.append(loss_bed)
+                        region_labels.append("Loss")
 
                     samples_label = args.hm_samplesLabel if args.hm_samplesLabel else bw_labels
                     if len(samples_label) != len(bw_paths):
@@ -1485,8 +1766,23 @@ dev.off()
     summary.append("")
     summary.append(f"Target: {target}")
     summary.append(f"Contrast: {contrast_var}:{contrast_test}:{contrast_ref}")
+
+    # ---- NEW: include method + mode in final conclusion ----
+    if args.diff_method == "deseq2":
+        summary.append(f"Diff method: deseq2 (sizefactors={args.deseq2_sizefactors})")
+    else:
+        summary.append(f"Diff method: edger (norm={args.edger_norm})")
+
     summary.append(f"Regions analyzed: {total_regions_used if total_regions_used is not None else 'NA'}")
-    summary.append(f"Significant regions (padj<{args.alpha}, |LFC|>={args.lfc}): {n_sig}")
+    summary.append(f"Regions mode: {regions_mode}")
+    if args.call_peaks:
+        summary.append(f"MACS2 controls: {'YES (bam_control pooled per condition)' if macs2_used_control else 'NO'}")
+
+    if args.diff_method == "deseq2":
+        summary.append(f"Significant regions (padj<{args.deseq2_alpha}, |LFC|>={args.deseq2_lfc}): {n_sig}")
+    else:
+        summary.append(f"Significant regions (FDR<{args.edger_alpha}, |LFC|>={args.edger_lfc}): {n_sig}")
+
     summary.append(f"  - Gain: {n_gain}")
     summary.append(f"  - Loss: {n_loss}")
     summary.append("")

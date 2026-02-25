@@ -43,7 +43,7 @@ GNOMES is a **two-step method**; signal normalization followed by differential b
 **Goal**: Generate scaled bigWig tracks across samples.
 
 **Pipeline**:
-1. Convert BAM → raw bigWig → bedGraph (optional blacklist filtering)
+1. Convert BAM → raw bigWig → bedGraph (*optional* blacklist filtering + control(input/IGG) subtraction)
 2. Identify local maxima in each bedGraph
 3. Compute the 99th percentile (P99) of local signal maxima per sample
 4. Within each target, select a reference sample and compute scaling factor (SF): `SF(sample) = P99(reference_sample) / P99(sample)`
@@ -70,7 +70,7 @@ GNOMES supports two strategies:
 **Pipeline**:
 1. Quantify per-region signal from normalized bigWigs
 2. Convert signal into count-like matrices
-3. Perform differential analysis using DESeq2
+3. Perform differential analysis using DESeq2 or edgeR
 
 **Outputs**:
 - volcano + MA plot
@@ -112,7 +112,7 @@ GNOMES diff --help
 
 ### Option 2 — Apptainer / Singularity
 
-
+***--> Soon available***
 
 
 
@@ -159,7 +159,7 @@ GNOMES diff \
 
 ## Command examples
 
-**Example 1 — Single-End (with blacklist) and Differential binding using user BED regions**
+**Example 1 — Single-End (with blacklist) and Differential binding using user BED regions with DESEQ2**
 
 ```bash
 GNOMES norm \
@@ -178,11 +178,14 @@ GNOMES diff \
   --contrast condition:KO:WT \
   --target H3K27me3 \
   --outdir output/gnomes_run_diff \
-  --alpha 0.05 \
-  --lfc 0.5
+  --diff-method deseq2 \
+  --deseq2-alpha 0.05 \
+  --deseq2-lfc 0.58 \
+  --deseq2-min-counts 100 \
+  --deseq2-sizefactors auto
 ```
 
-**Example 2 — Paired-End (without blacklist) and Differential binding using MACS2 consensus peaks**
+**Example 2 — Paired-End (without blacklist) and Differential binding using MACS2 consensus peaks with edgeR**
 
 ```bash
 GNOMES norm \
@@ -203,7 +206,12 @@ GNOMES diff \
   --lfc 0.5 \
   --macs2-mode broad \
   --macs2-qvalue 0.005 \
-  --macs2-merge 100
+  --macs2-merge 100 \
+  --diff-method edger \
+  --edger-alpha 0.05 \
+  --edger-lfc 0.58 \
+  --edger-min-counts 100 \
+  --edger-norm TMM \
 ```
 
 
@@ -214,22 +222,26 @@ GNOMES diff \
 
 Tab-separated file with required columns:
 
-| column      | description                                    |
-| ----------- | ---------------------------------------------- |
-| `sample_id` | unique sample name (used for output filenames) |
-| `bam`       | path to BAM file                               |
-| `condition` | condition label (ie. WT, KO)                 |
-| `target`    | mark/TF name (ie. H3K27me3, EZH2)            |
+| column       | description                                    |
+| ------------ | ---------------------------------------------- |
+| `sample_id`  | unique sample name (used for output filenames) |
+| `bam`        | path to BAM file                               |
+| `condition`  | condition label (ie. WT, KO)                   |
+| `target`     | mark/TF name (ie. H3K27me3, EZH2)              |
+| **OPTIONAL*** `bam_control` | path to BAM control (input/IGG) file           |
 
+**When provided, control sample is subtracted from corresponding IP sample*
 
 Example:
 ```
-sample_id	bam	condition	target
-WT_1	/path/WT_1.bam	WT	H3K27me3
-WT_2	/path/WT_2.bam	WT	H3K27me3
-KO_1	/path/KO_1.bam	KO	H3K27me3
-KO_2	/path/KO_2.bam	KO	H3K27me3
+sample_id	bam	condition	target  bam_control
+WT_1	/path/WT_H3K27me3_1.bam	WT	H3K27me3  /path/WT_input_1.bam
+WT_2	/path/WT_H3K27me3_2.bam	WT	H3K27me3  /path/WT_input_2.bam
+KO_1	/path/KO_H3K27me3_1.bam	KO	H3K27me3  /path/KO_input_1.bam
+KO_2	/path/KO_H3K27me3_2.bam	KO	H3K27me3  /path/KO_input_2.bam
 ```
+
+
 
 ### Regions BED (`--regions`, diff step only)
 
@@ -247,13 +259,14 @@ If you use `--call-peaks`, GNOMES builds regions automatically from MACS2 pooled
 
 **`--outdir` contains**:
 - `01_raw_bigwig/sample_id.bw` (raw)
-- `02_bedgraph/sample_id.bedGraph`
-- `03_bedgraph_blacklist/`
+- **OPTIONAL** `02_bedgraph/sample_id.bedGraph`
+- **OPTIONAL** `03_bedgraph_blacklist/`
 blacklist-filtered bedGraph (or identical copy if no blacklist)
-- `04_local_maxima/sample_id.local_maxima.bed`
-- `05_normalized_bedgraph/sample_id.norm99.bedGraph` (+ sorted)
+- **OPTIONAL** `04_local_maxima/sample_id.local_maxima.bed`
+- **OPTIONAL** `05_normalized_bedgraph/sample_id.norm99.bedGraph` (+ sorted)
 - `06_normalized_bigwig/sample_id.norm99.bw`
-- `07_median_bedgraph/` and `08_median_bigwig/`
+- **OPTIONAL** `07_median_bedgraph/`
+- `08_median_bigwig/`
 median tracks per (condition, target)
 - `09_qc/`
 PCA + correlation heatmap for raw and normalized bigWigs (per target)
