@@ -17,7 +17,7 @@
   <a href="#command-examples">Command examples</a> •
   <a href="#inputs">Inputs</a> •
   <a href="#outputs">Outputs</a> •
-  <a href="#contributing">Troubleshooting</a> •
+  <a href="#contributing">Contributing</a> •
   <a href="#citation">Citation</a>
 </p>
 
@@ -25,18 +25,18 @@
 
 ## Overview
 
-**GNOMES** is a user-friendly framework to:
+***GNOMES*** is a user-friendly framework to:
 
 1. **Normalize** epigenomic signal tracks from BAM files using a robust percentile-based scaling strategy.
 2. **Perform differential binding analysis** over user-defined regions, or automatically generated peaks, using DESeq2 with built-in quality control.
 
-GNOMES is designed for **Cut&Run** and **ChIP-seq** (Single-End or Paired-End), and supports both histone marks and transcription factors.
+***GNOMES*** is designed for **Cut&Run** and **ChIP-seq** (Single-End or Paired-End), and supports both histone marks and transcription factors.
 
 ---
 
 ## Workflow and methodology
 
-GNOMES is a **two-step method**; signal normalization followed by differential binding analysis:
+***GNOMES*** is a **two-step method**; signal normalization followed by differential binding analysis:
 
 ### **Step 1 — Normalization (`GNOMES norm`)**
 
@@ -259,20 +259,20 @@ If you use `--call-peaks`, GNOMES builds regions automatically from MACS2 pooled
 
 **`--outdir` contains**:
 - `01_raw_bigwig/sample_id.bw` (raw)
-- **OPTIONAL** `02_bedgraph/sample_id.bedGraph`
-- **OPTIONAL** `03_bedgraph_blacklist/`
+- **OPTIONAL (Default OFF)** `02_bedgraph/sample_id.bedGraph`
+- **OPTIONAL (Default OFF)** `03_bedgraph_blacklist/`
 blacklist-filtered bedGraph (or identical copy if no blacklist)
-- **OPTIONAL** `04_local_maxima/sample_id.local_maxima.bed`
-- **OPTIONAL** `05_normalized_bedgraph/sample_id.norm99.bedGraph` (+ sorted)
+- **OPTIONAL (Default OFF)** `04_local_maxima/sample_id.local_maxima.bed`
+- **OPTIONAL (Default OFF)** `05_normalized_bedgraph/sample_id.norm99.bedGraph` (+ sorted)
 - `06_normalized_bigwig/sample_id.norm99.bw`
-- **OPTIONAL** `07_median_bedgraph/`
+- **OPTIONAL (Default OFF)** `07_median_bedgraph/`
 - `08_median_bigwig/`
 median tracks per (condition, target)
 - `09_qc/`
 PCA + correlation heatmap for raw and normalized bigWigs (per target)
 - `scaling_factors.tsv`
 P99 and scaling factor per sample
-- `normdb_normalize.log`
+- `GNOMES_norm.log`
 full command log (including all tool calls)
 
 
@@ -283,7 +283,7 @@ full command log (including all tool calls)
 copied user BED, or MACS2 consensus peaks BED
 - `03_computeMatrix/`
 per-sample computeMatrix outputs for normalized bigWigs
-- `04_deeptools_heatmap/` (optional)
+- **OPTIONAL (Default ON)** `04_deeptools_heatmap/`
 heatmap/profile over significant gain/loss regions (normalized only)
 - `counts_matrix.tsv`
 per-region counts from normalized bigWigs
@@ -294,11 +294,11 @@ complete DESeq2 results table
 - `results_signif_gain.tsv` / `results_signif_loss.tsv`
 significant regions split by direction
 - `volcano.pdf`, `MA.pdf`, `PCA_vst.pdf`, `sample_correlation_heatmap.pdf`
-- Optional raw-derived:
+- **OPTIONAL (Default ON)** raw-derived:
     - `counts_matrix_RAW_bigwig.tsv`
     - `PCA_vst_RAW_bigwig.pdf`
     - `sample_correlation_heatmap_RAW_bigwig.pdf`
-- `normdb_diffbind.log`
+- `GNOMES_diff.log`
 full command log + exact tool calls for reproducibility
 
 
@@ -306,18 +306,12 @@ full command log + exact tool calls for reproducibility
 
 ## Contributing
 
-Contributions are welcome:
-- bug reports and feature requests via GitHub Issues
-
-
-Please include:
-- command used
-- log file
+Contributions are welcome (bug reports and feature requests via *GitHub Issues*)! 
 
 
 ## Citation
 
-If you use GNOMES in your work, please cite:
+If you use ***GNOMES*** in your work, please cite:
 
 ***Roule T. et al. GNOMES: Genome-wide NOrmalization of Mapped Epigenomic Signals. [Journal] (YEAR).***
 
