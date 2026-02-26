@@ -1157,7 +1157,15 @@ def main():
                         f"Region count mismatch for {sid}: "
                         f"{len(vec)} values in matrix but {n_regions} regions in sorted BED."
                     )
-                counts[sid] = pd.Series(vec).round().astype(int)
+
+                # Convert negative values to 0 (when control subtraction is used)
+                s = pd.Series(vec, dtype="float64")
+                s = s.replace([math.inf, -math.inf], pd.NA)
+                s = s.fillna(0.0)
+                # IMPORTANT: DESeq2/edgeR cannot take negative "counts"
+                s[s < 0] = 0.0
+                counts[sid] = s.round().astype(int)
+
 
             counts_path = os.path.join(args.outdir, "counts_matrix.tsv")
             counts.to_csv(counts_path, sep="\t", index=False)
@@ -1629,7 +1637,11 @@ dev.off()
                             f"RAW region count mismatch for {sid}: "
                             f"{len(vec)} values in matrix but {n_regions_raw} regions in sorted BED."
                         )
-                    counts_raw[sid] = pd.Series(vec).round().astype(int)
+                    # Convert negative values to 0 (when control subtraction is used)    
+                    s = pd.Series(vec, dtype="float64")
+                    s = s.replace([math.inf, -math.inf], pd.NA).fillna(0.0)
+                    s[s < 0] = 0.0
+                    counts_raw[sid] = s.round().astype(int)
 
                 counts_raw_path = os.path.join(args.outdir, "counts_matrix_RAW_bigwig.tsv")
                 counts_raw.to_csv(counts_raw_path, sep="\t", index=False)
