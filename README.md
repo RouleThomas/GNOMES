@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Genome-wide NOrmalization of Mapped Epigenomic Signals</b><br>
-  Normalization + differential binding for Cut&Run / ChIP-seq, with reproducible QC and publication-ready outputs.
+  Normalization + differential binding for Cut&Run / ChIP-seq, with fine-tunable parameters, QC and publication-ready outputs.
 </p>
 
 <p align="center">
@@ -15,6 +15,7 @@
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick start</a> •
   <a href="#command-examples">Command examples</a> •
+  <a href="#choosing-a-differential-method">Choosing a differential method</a> •
   <a href="#inputs">Inputs</a> •
   <a href="#outputs">Outputs</a> •
   <a href="#contributing">Contributing</a> •
@@ -122,8 +123,9 @@ GNOMES diff --help
 
 GNOMES is a two-step pipeline: **normalize** first, then **diff**.
 
-### **Step 1 — Normalize**
+### **Step 1**
 
+**Normalize**
 ```
 GNOMES norm \
   --meta <metadata.tsv> \
@@ -133,8 +135,9 @@ GNOMES norm \
 ```
 
 
-### **Step 2 — Differential binding (using your own BED regions)**
+### **Step 2**
 
+**Differential binding *using your own BED regions***
 ```
 GNOMES diff \
   --regions <regions.bed> \
@@ -145,8 +148,7 @@ GNOMES diff \
   --outdir <diff_output_directory>
 ```
 
-### **Step 2 — Differential binding (MACS2 consensus peaks)**
-
+**Differential binding *on MACS2 consensus peaks***
 ```
 GNOMES diff \
   --call-peaks \
@@ -156,6 +158,9 @@ GNOMES diff \
   --target <mark_or_TF> \
   --outdir <diff_output_directory>
 ```
+
+With `--call-peaks`, the *MACS2* consensus peak pipeline is fully configurable via `--macs2-*` options. ***GNOMES*** automatically pools replicates per condition, and if `bam_control` is provided in the metadata, matching control BAMs are used during peak calling. The *deepTools* heatmap and profile plot are also fully configurable (`--hm-*` and `--pp-*` options).
+
 
 
 ## Command examples
@@ -203,8 +208,6 @@ GNOMES diff \
   --contrast condition:KO:WT \
   --target H3K27me3 \
   --outdir output/gnomes_run_diff \
-  --alpha 0.05 \
-  --lfc 0.5 \
   --macs2-mode broad \
   --macs2-qvalue 0.005 \
   --macs2-merge 100 \
@@ -212,9 +215,19 @@ GNOMES diff \
   --edger-alpha 0.05 \
   --edger-lfc 0.58 \
   --edger-min-counts 100 \
-  --edger-norm TMM \
+  --edger-norm TMM
 ```
 
+## Choosing a differential method
+
+***GNOMES*** supports both DESeq2 and edgeR, and users are **strongly encouraged to explore different normalization strategies** depending on their specific data. We recommend visually inspecting the significant gain/loss BED files generated in `04_deeptools_heatmap/` by loading them into IGV alongside the normalized bigWig tracks. This manual inspection can help the choice of the most appropriate differential method and normalization strategy.
+
+In our experience, the following configurations are robust starting points:
+- `--diff-method deseq2 --deseq2-sizefactors auto`
+- `--diff-method edger --edger-norm TMM`
+- `--diff-method edger --edger-norm RLE`
+
+**If a global shift in occupancy is expected** (ie. near-complete gain or loss of a mark), we recommend using `--deseq2-sizefactors none` or `--edger-norm none`. By default, DESeq2 and edgeR apply median-based library normalization, which assumes that most regions are not changing. Disabling this step prevents correction toward the median and preserves true global shifts.
 
 
 ## Inputs
@@ -231,15 +244,19 @@ Tab-separated file with required columns:
 | `target`     | mark/TF name (ie. H3K27me3, EZH2)              |
 | **OPTIONAL*** `bam_control` | path to BAM control (input/IGG) file           |
 
-**When provided, control sample is subtracted from corresponding IP sample*
+***When provided, control sample is subtracted from corresponding IP sample**
 
 Example:
 ```
 sample_id	bam	condition	target  bam_control
-WT_1	/path/WT_H3K27me3_1.bam	WT	H3K27me3  /path/WT_input_1.bam
-WT_2	/path/WT_H3K27me3_2.bam	WT	H3K27me3  /path/WT_input_2.bam
-KO_1	/path/KO_H3K27me3_1.bam	KO	H3K27me3  /path/KO_input_1.bam
-KO_2	/path/KO_H3K27me3_2.bam	KO	H3K27me3  /path/KO_input_2.bam
+WT_H3K27me3_1	/path/WT_H3K27me3_1.bam	WT	H3K27me3  /path/WT_input_1.bam
+WT_H3K27me3_2	/path/WT_H3K27me3_2.bam	WT	H3K27me3  /path/WT_input_2.bam
+KO_H3K27me3_1	/path/KO_H3K27me3_1.bam	KO	H3K27me3  /path/KO_input_1.bam
+KO_H3K27me3_2	/path/KO_H3K27me3_2.bam	KO	H3K27me3  /path/KO_input_2.bam
+WT_EZH2_1	/path/WT_EZH2_1.bam	WT	EZH2  /path/WT_input_1.bam
+WT_EZH2_2	/path/WT_EZH2_2.bam	WT	EZH2  /path/WT_input_2.bam
+KO_EZH2_1	/path/KO_EZH2_1.bam	KO	EZH2  /path/KO_input_1.bam
+KO_EZH2_2	/path/KO_EZH2_2.bam	KO	EZH2  /path/KO_input_2.bam
 ```
 
 
