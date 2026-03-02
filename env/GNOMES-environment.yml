@@ -128,7 +128,6 @@ dependencies:
   - libxcrypt=4.4.36
   - libxml2=2.13.9
   - libzlib=1.3.1
-  - macs2=2.2.9.1
   - make=4.4.1
   - markupsafe=3.0.3
   - matplotlib-base=3.10.8

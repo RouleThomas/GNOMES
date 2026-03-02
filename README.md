@@ -101,6 +101,7 @@ conda activate GNOMES
 
 # Install dependencies
 pip install -e .
+pip install --no-binary :all: MACS2==2.2.9.1 # OPTIONAL: only if you use --call-peaks
 
 # Test
 GNOMES norm --help
