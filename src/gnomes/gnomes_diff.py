@@ -16,7 +16,7 @@ OPTIONAL_CONTROL_COL = "bam_control"
 
 
 # -----------------------------
-# GNOME splash (ALWAYS prints once)
+# GNOME splash 
 # -----------------------------
 def print_gnome_splash():
     splash = r"""
@@ -58,7 +58,7 @@ def print_gnome_splash():
 
 
 # -----------------------------
-# GNOME walker (multi-line, only when interactive)
+# GNOME walker (only when interactive)
 # -----------------------------
 class GnomeWalker:
     def __init__(self, enabled=True, fps=10, track_width=30):
@@ -265,7 +265,7 @@ class DelayedWalkController:
 
 
 # -----------------------------
-# Pretty logging + timing
+# Logging + timing
 # -----------------------------
 def now():
     return datetime.now().strftime("%H:%M:%S")
@@ -735,89 +735,161 @@ def main():
     t0 = time.time()
     print_gnome_splash()
 
+
     ap = argparse.ArgumentParser(
         prog="GNOMES diff",
-        description="Diff binding on BED regions (computeMatrix-based) using DESeq2 or edgeR + optional deepTools plotHeatmap (normalized only) + optional MACS2 consensus regions"
+        description="Differential binding on BED regions using DESeq2 or edgeR with optional MACS2 consensus peaks calling and deepTools visualization."
     )
-    ap.add_argument("--meta", required=True, help="samples.tsv with columns: sample_id bam condition target [bam_control optional]")
-    ap.add_argument("--regions", default=None, help="BED file of regions (chr start end). Required unless --call-peaks.")
-    ap.add_argument("--call-peaks", action="store_true",
-                    help="Call peaks with MACS2 (pooled per condition) and build consensus peaks. Only allowed if --regions is NOT set.")
-    ap.add_argument("--bigwig-dir", required=True,
+
+    # -----------------------------
+    # Required inputs
+    # -----------------------------
+    req = ap.add_argument_group("Required inputs")
+
+    req.add_argument("--meta", required=True,
+                    help="samples.tsv with columns: sample_id bam condition target [bam_control optional]")
+
+    req.add_argument("--bigwig-dir", required=True,
                     help="Directory containing normalized bigWigs (expects <sample_id>.norm99.bw)")
-    ap.add_argument("--bigwig-dir-raw", default=None,
-                    help="Optional directory containing RAW bigWigs to also generate DESeq2 PCA/correlation from RAW-derived counts (expects <sample_id>.bw). NOTE: deepTools heatmap/profile is NOT run on raw.")
-    ap.add_argument("--contrast", required=True, help="e.g. condition:KO:WT")
-    ap.add_argument("--outdir", required=True, help="Output directory")
-    ap.add_argument("--target", default=None, help="If meta contains multiple targets, specify one (e.g. H3K27me3)")
 
-    # ---- Differential method selection ----
-    ap.add_argument("--diff-method", dest="diff_method", choices=["deseq2", "edger"], default="deseq2",
-                    help="Differential binding method (default deseq2).")
+    req.add_argument("--contrast", required=True,
+                    help="Contrast specification (e.g. condition:KO:WT)")
 
-    # ---- DESeq2 options (renamed + grouped) ----
-    ap.add_argument("--deseq2-alpha", type=float, default=0.05,
+    req.add_argument("--outdir", required=True,
+                    help="Output directory")
+
+
+    # -----------------------------
+    # Region definition
+    # -----------------------------
+    regions = ap.add_argument_group("Region definition")
+
+    regions.add_argument("--regions", default=None,
+                        help="BED file of regions (chr start end). Required unless --call-peaks.")
+
+    regions.add_argument("--call-peaks", action="store_true",
+                        help="Call peaks with MACS2 (pooled per condition) and build consensus peaks.")
+
+    regions.add_argument("--target", default=None,
+                        help="If meta contains multiple targets, specify one (e.g. H3K27me3)")
+
+    regions.add_argument("--bigwig-dir-raw", default=None,
+                        help="Optional RAW bigWig directory to generate PCA/correlation from raw signal (expects <sample_id>.bw).")
+
+
+    # -----------------------------
+    # Differential method
+    # -----------------------------
+    diff = ap.add_argument_group("Differential analysis")
+
+    diff.add_argument("--diff-method", choices=["deseq2", "edger"], default="deseq2",
+                    help="Differential binding method (default: deseq2)")
+
+
+    # -----------------------------
+    # DESeq2 parameters
+    # -----------------------------
+    deseq = ap.add_argument_group("DESeq2 parameters")
+
+    deseq.add_argument("--deseq2-alpha", type=float, default=0.05,
                     help="DESeq2 significance threshold (padj) for plots + signif tables (default 0.05)")
-    ap.add_argument("--deseq2-lfc", type=float, default=0.0,
+
+    deseq.add_argument("--deseq2-lfc", type=float, default=0.0,
                     help="DESeq2 log2FC threshold for plots + signif tables (default 0.0)")
-    ap.add_argument("--deseq2-min-counts", type=int, default=100,
+
+    deseq.add_argument("--deseq2-min-counts", type=int, default=100,
                     help="Low-count filter: keep region if max(sum(counts per condition)) >= this (default 100)")
-    ap.add_argument("--deseq2-sizefactors", choices=["auto", "none"], default="auto",
-                    help=("DESeq2 size factor behavior: "
+
+    deseq.add_argument("--deseq2-sizefactors", choices=["auto", "none"], default="auto",
+                    help="DESeq2 size factor behavior: "
                           "'auto' (default) = DESeq2 estimates size factors (use when expecting gain/loss balanced). "
-                          "'none' = force sizeFactors=1 (use when expecting global unidirectional shifts)."))
+                          "'none' = force sizeFactors=1 (use when expecting global unidirectional shifts).")
 
-    # ---- edgeR options (mirrors DESeq2 style) ----
-    ap.add_argument("--edger-alpha", type=float, default=0.05,
+
+    # -----------------------------
+    # edgeR parameters
+    # -----------------------------
+    edger = ap.add_argument_group("edgeR parameters")
+
+    edger.add_argument("--edger-alpha", type=float, default=0.05,
                     help="edgeR significance threshold (FDR) for plots + signif tables (default 0.05)")
-    ap.add_argument("--edger-lfc", type=float, default=0.0,
+
+    edger.add_argument("--edger-lfc", type=float, default=0.0,
                     help="edgeR log2FC threshold for plots + signif tables (default 0.0)")
-    ap.add_argument("--edger-min-counts", type=int, default=100,
+
+    edger.add_argument("--edger-min-counts", type=int, default=100,
                     help="Low-count filter: keep region if max(sum(counts per condition)) >= this (default 100)")
-    ap.add_argument("--edger-norm", choices=["TMM", "TMMwsp", "RLE", "upperquartile", "none"], default="TMM",
-                    help=("edgeR normalization (calcNormFactors method): "
+
+    edger.add_argument("--edger-norm", choices=["TMM", "TMMwsp", "RLE", "upperquartile", "none"],
+                    default="TMM",
+                    help="edgeR normalization (calcNormFactors method): "
                           "TMM (default), TMMwsp, RLE, upperquartile, or none. "
-                          "Use 'none' to force normalization factors to 1 (use when expecting global unidirectional shifts)."))
+                          "Use 'none' to force normalization factors to 1 (use when expecting global unidirectional shifts).")
 
-    ap.add_argument("--no-walk", action="store_true", help="Disable the GNOME walking animation")
 
-    # ---- deepTools (normalized ONLY) ----
-    ap.add_argument("--no-plotHeatmap", action="store_true",
-                    help="Disable deepTools computeMatrix(reference-point) + plotHeatmap step (enabled by default). (Normalized bigWigs only)")
-    ap.add_argument("--hm-referencePoint", default="center", choices=["TSS", "TES", "center"],
-                    help="computeMatrix reference-point --referencePoint (default center)")
-    ap.add_argument("--hm-before", type=int, default=5000, help="computeMatrix -b (bp upstream) (default 5000)")
-    ap.add_argument("--hm-after", type=int, default=5000, help="computeMatrix -a (bp downstream) (default 5000)")
-    ap.add_argument("--hm-threads", type=int, default=6, help="computeMatrix -p threads (default 6)")
+    # -----------------------------
+    # deepTools visualization
+    # -----------------------------
+    heatmap = ap.add_argument_group("deepTools visualization")
 
-    ap.add_argument("--hm-colorMap", default="bwr", help="plotHeatmap --colorMap (default bwr)")
-    ap.add_argument("--hm-whatToShow", default="heatmap and colorbar",
+    heatmap.add_argument("--no-plotHeatmap", action="store_true",
+                        help="Disable computeMatrix + plotHeatmap (enabled by default)")
+
+    heatmap.add_argument("--hm-referencePoint", default="center",
+                        choices=["TSS", "TES", "center"],
+                        help="computeMatrix reference-point --referencePoint (default center)")
+
+    heatmap.add_argument("--hm-before", type=int, default=5000, help="computeMatrix -b (bp upstream) (default 5000)")
+    heatmap.add_argument("--hm-after", type=int, default=5000, help="computeMatrix -a (bp downstream) (default 5000)")
+    heatmap.add_argument("--hm-threads", type=int, default=6, help="computeMatrix -p threads (default 6)")
+
+    heatmap.add_argument("--hm-colorMap", default="bwr", help="plotHeatmap --colorMap (default bwr)")
+    heatmap.add_argument("--hm-whatToShow", default="heatmap and colorbar",
                     help="plotHeatmap --whatToShow (default: 'heatmap and colorbar')")
-    ap.add_argument("--hm-heatmapHeight", type=float, default=10.0, help="plotHeatmap --heatmapHeight (default 10)")
-    ap.add_argument("--hm-heatmapWidth", type=float, default=2.0, help="plotHeatmap --heatmapWidth (default 2)")
-    ap.add_argument("--hm-samplesLabel", nargs="+", default=None,
+    heatmap.add_argument("--hm-heatmapHeight", type=float, default=10.0, help="plotHeatmap --heatmapHeight (default 10)")
+    heatmap.add_argument("--hm-heatmapWidth", type=float, default=2.0, help="plotHeatmap --heatmapWidth (default 2)")
+
+    heatmap.add_argument("--hm-samplesLabel", nargs="+", default=None,
                     help="plotHeatmap --samplesLabel list (default: sample_id list from meta)")
 
-    ap.add_argument("--no-plotProfile", action="store_true",
+    heatmap.add_argument("--no-plotProfile", action="store_true",
                     help="Disable deepTools plotProfile step (enabled by default if heatmap is enabled and signif regions exist).")
-    ap.add_argument("--no-pp-perGroup", action="store_true",
+    heatmap.add_argument("--no-pp-perGroup", action="store_true",
                     help="Disable plotProfile --perGroup (enabled by default).")
-    ap.add_argument("--pp-plotWidth", type=float, default=8.0,
+
+    heatmap.add_argument("--pp-plotWidth", type=float, default=8.0,
                     help="plotProfile --plotWidth (default 8)")
-    ap.add_argument("--pp-colors", nargs="+", default=None,
+    heatmap.add_argument("--pp-colors", nargs="+", default=None,
                     help="plotProfile --colors list. If not provided, auto uses black for ref and grey for others (repeated as needed).")
 
-    # ---- MACS2 controls (only for --call-peaks) ----
-    ap.add_argument("--macs2-format", default="AUTO",
-                    help="MACS2 -f / --format (default AUTO; pass exactly as MACS2 expects)")
-    ap.add_argument("--macs2-gsize", default="hs",
-                    help="MACS2 -g / --gsize (default hs; can be mm or numeric like 2.7e9)")
-    ap.add_argument("--macs2-mode", default="broad", choices=["narrow", "broad"],
+
+    # -----------------------------
+    # MACS2 peak calling
+    # -----------------------------
+    macs = ap.add_argument_group("MACS2 peak calling (only used with --call-peaks)")
+
+    macs.add_argument("--macs2-format", default="AUTO",
+                    help="MACS2 -f / --format Format of tag file (default AUTO, use BAMPE for Paired-End data; pass exactly as MACS2 expects)")
+    macs.add_argument("--macs2-gsize", default="hs",
+                    help="MACS2 -g / --gsize Mappable genome size (default hs; can be mm or numeric like 2.7e9)")
+    macs.add_argument("--macs2-mode", default="broad", choices=["narrow", "broad"],
                     help="MACS2 peak type (default broad)")
-    ap.add_argument("--macs2-qvalue", type=float, default=0.005,
-                    help="Q-value cutoff in probability space (default 0.005). Internally converted to MACS2 qscore threshold (-log10(q)).")
-    ap.add_argument("--macs2-merge", type=int, default=100,
+    macs.add_argument("--macs2-qvalue", type=float, default=0.005,
+                    help="Q-value cutoff (default 0.005). Internally converted to MACS2 qscore threshold (-log10(q)).")
+    macs.add_argument("--macs2-merge", type=int, default=100,
                     help="bedtools merge -d distance for consensus peaks (default 100 bp)")
+
+
+    # -----------------------------
+    # Misc
+    # -----------------------------
+    misc = ap.add_argument_group("Miscellaneous")
+
+    misc.add_argument("--no-walk", action="store_true",
+                    help="Disable GNOMES walking animation")
+
+
+
 
     args = ap.parse_args()
 
@@ -979,7 +1051,7 @@ def main():
 
                 qscore_thr = qvalue_to_macs2_qscore(args.macs2_qvalue)
 
-                # Note: control usage is decided per-level (condition), but we enforce consistency.
+                # Note: control usage is decided per-level (condition)
                 macs2_summary = {
                     "format (-f)": args.macs2_format,
                     "gsize (-g)": args.macs2_gsize,
@@ -1165,6 +1237,7 @@ def main():
                 # IMPORTANT: DESeq2/edgeR cannot take negative "counts"
                 s[s < 0] = 0.0
                 counts[sid] = s.round().astype(int)
+
 
 
             counts_path = os.path.join(args.outdir, "counts_matrix.tsv")
@@ -1588,7 +1661,7 @@ dev.off()
             n_sig = int(n_gain) + int(n_loss)
 
             # -------------------------
-            # Optional Step: RAW bigWig PCA + correlation heatmap (DESeq2-style)
+            # Optional Step: RAW bigWig PCA + correlation heatmap 
             # -------------------------
             if args.bigwig_dir_raw is not None:
                 step_num += 1
@@ -1642,6 +1715,7 @@ dev.off()
                     s = s.replace([math.inf, -math.inf], pd.NA).fillna(0.0)
                     s[s < 0] = 0.0
                     counts_raw[sid] = s.round().astype(int)
+
 
                 counts_raw_path = os.path.join(args.outdir, "counts_matrix_RAW_bigwig.tsv")
                 counts_raw.to_csv(counts_raw_path, sep="\t", index=False)

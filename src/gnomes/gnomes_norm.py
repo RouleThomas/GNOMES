@@ -640,10 +640,10 @@ def main():
             "GNOMES normalize\n"
             "---------------\n"
             "Convert BAMs into raw bigWigs, estimate per-sample local-maxima P99, then\n"
-            "scale signals to a reference sample per target and write normalized bigWigs.\n\n"
+            "scale signals to a reference sample per target and write normalized bigWigs.\n"
         ),
         epilog=(
-            "Examples:\n"
+            "Example:\n"
             "  GNOMES norm \\\n"
             "    --meta meta/samples.tsv \\\n"
             "    --outdir output/gnomes_run \\\n"
@@ -651,12 +651,13 @@ def main():
             "    --chrom-sizes meta/GRCh38_chrom_sizes.tab \\\n"
             "    --threads 8 \\\n"
             "    --mode SE \\\n"
-            "    --se-fragment-length 200 \\\n"
+            "    --se-fragment-length 200\n\n"
             "Meta file requirements:\n"
             "  Required columns: sample_id, bam, condition, target\n"
             "  Optional column:  bam_control (control BAM for IP-control subtraction)\n"
         ),
     )
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser(
@@ -664,8 +665,6 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         help="Run GNOMES normalization (BAM → RAW bigWig → P99 scaling → normalized bigWig).",
         description=(
-            "GNOMES normalize\n"
-            "---------------\n"
             "This command will:\n"
             "  1) Generate RAW bigWigs from BAMs (bamCoverage OR bamCompare if bam_control)\n"
             "  2) Convert RAW bigWigs → bedGraphs (bigWigToBedGraph)\n"
@@ -678,37 +677,62 @@ def main():
         ),
     )
 
-    # Inputs / core
-    p.add_argument("--meta", required=True, help="TSV with columns: sample_id bam condition target [bam_control]")
-    p.add_argument("--outdir", required=True, help="Output directory")
-    p.add_argument("--blacklist", default=None, help="Optional BED blacklist to remove from bedGraphs")
-    p.add_argument("--chrom-sizes", required=True, dest="chrom_sizes",
-                   help="Chrom sizes file for bedGraphToBigWig (e.g. GRCh38_chrom_sizes.tab)")
-    p.add_argument("--threads", type=int, default=4, help="Threads for deepTools (default 4)")
+    # -----------------------------
+    # Required inputs
+    # -----------------------------
+    req = p.add_argument_group("Required inputs")
 
-    # Coverage model
-    p.add_argument("--mode", choices=["PE", "SE"], required=True,
-                   help="Read layout: PE or SE (required)")
-    p.add_argument("--se-fragment-length", type=int, default=200,
-                   help="If --mode SE, extend reads to this fragment length (default 200)")
+    req.add_argument("--meta", required=True,
+                     help="samples.tsv with columns: sample_id bam condition target [bam_control optional]")
 
+    req.add_argument("--outdir", required=True,
+                     help="Output directory")
 
+    req.add_argument("--chrom-sizes", required=True, dest="chrom_sizes",
+                     help="Tab-separated file with chrom sizes required for bedGraphToBigWig (e.g. GRCh38_chrom_sizes.tab)")
+
+    # -----------------------------
+    # Optional inputs
+    # -----------------------------
+    opt = p.add_argument_group("Optional inputs")
+
+    opt.add_argument("--blacklist", default=None,
+                     help="Optional BED blacklist to remove from bedGraphs")
+
+    # -----------------------------
+    # Coverage / read layout
+    # -----------------------------
+    cov = p.add_argument_group("Coverage / read layout")
+
+    cov.add_argument("--mode", choices=["PE", "SE"], required=True,
+                     help="Read layout: Paired-End (PE) or Single-End (SE) (required)")
+
+    cov.add_argument("--se-fragment-length", type=int, default=200,
+                     help="If --mode SE, extend reads to this fragment length (default 200)")
+
+    cov.add_argument("--threads", type=int, default=4,
+                     help="Threads for deepTools (default 4)")
+
+    # -----------------------------
     # Retention / QC
-    p.add_argument(
-        "--keep-temp",
-        action="store_true",
-        help=("Keep intermediate folders (02..05 and 07).\n"
-              "Default: delete them at the end.")
-    )
-    p.add_argument(
-        "--no-qc",
-        action="store_true",
-        help=("Skip QC plots (09_qc).\n"
-              "Default: generate QC (RAW + NORMALIZED) per target.")
-    )
+    # -----------------------------
+    qc = p.add_argument_group("Retention / QC")
 
-    # Walker controls 
-    p.add_argument("--no-walk", action="store_true", help="Disable the GNOME walking animation")
+    qc.add_argument("--keep-temp", action="store_true",
+                    help=("Keep intermediate folders (02..05 and 07).\n"
+                          "Default: delete them at the end."))
+
+    qc.add_argument("--no-qc", action="store_true",
+                    help=("Skip QC plots (09_qc).\n"
+                          "Default: generate QC (RAW + NORMALIZED) per target."))
+
+    # -----------------------------
+    # Miscellaneous
+    # -----------------------------
+    misc = p.add_argument_group("Miscellaneous")
+
+    misc.add_argument("--no-walk", action="store_true",
+                      help="Disable GNOMES walking animation")
 
 
     args = parser.parse_args()
@@ -744,7 +768,7 @@ def main():
     for d in [raw_bw, bg, bg_bl, maxima, norm_bg, norm_bw]:
         os.makedirs(d, exist_ok=True)
 
-    log_path = f"{args.outdir}/GNOMES_norm.log"
+    log_path = f"{args.outdir}/GNOMES_normalize.log"
 
 
     WALK_FPS = 10

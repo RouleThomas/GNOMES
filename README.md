@@ -35,9 +35,17 @@
 
 ---
 
+
 ## Workflow and methodology
 
-***GNOMES*** is a **two-step method**; signal normalization followed by differential binding analysis:
+***GNOMES*** is organized around three complementary commands:
+- `GNOMES norm` → signal normalization
+- **[OPTIONAL]** `GNOMES consensus` → exploration of candidate consensus peak sets
+- `GNOMES diff` → differential binding analysis
+
+In most analyses, users run `GNOMES norm` followed by `GNOMES diff`. The **`GNOMES consensus` module is optional** and can be used to explore candidate peak sets and **help select the most appropriate regions for differential binding analysis**.
+
+
 
 ### **Step 1 — Normalization (`GNOMES norm`)**
 
@@ -57,6 +65,25 @@
 - QC plots (PCA + correlation heatmap) for **raw** and **normalized** bigWigs
 
 This percentile-based normalization is designed to stabilize signal distributions without assuming equal total occupancy across samples.
+
+
+
+### **[OPTIONAL] — Consensus peak exploration (`GNOMES consensus`)**
+
+**Goal**: Explore candidate consensus peak sets by scanning multiple MACS2 peak calling thresholds and merge distances.
+
+**Pipeline**:
+1. Pool BAM files per condition (and per target)
+2. Run MACS2 peak calling
+3. Build consensus peak sets across grids of Q-value thresholds and peak merging distances
+4. Evaluate peak width distributions across candidates
+
+**Outputs**:
+- candidate consensus BED files
+- summary table of peak statistics
+- peak width distribution plots for each candidate set
+
+This step can **help identify robust regions for downstream differential binding analysis**. We recommend loading multiple candidate consensus peak BED files into IGV and comparing them with the normalized bigWig tracks from **Step 1** to select the most appropriate peak set for downstream differential binding analysis.
 
 
 ### **Step 2 — Differential binding (`GNOMES diff`)**
@@ -102,10 +129,11 @@ conda activate GNOMES
 
 # Install dependencies
 pip install -e .
-pip install --no-binary :all: MACS2==2.2.9.1 # OPTIONAL: only if you use --call-peaks
+pip install --no-binary :all: MACS2==2.2.9.1 # OPTIONAL: only if using GNOMES consensus, or GNOMES diff --call-peaks
 
 # Test
 GNOMES norm --help
+GNOMES consensus --help
 GNOMES diff --help
 ```
 
@@ -123,6 +151,8 @@ GNOMES diff --help
 
 GNOMES is a two-step pipeline: **normalize** first, then **diff**.
 
+An optional consensus peak exploration step can be run between them to help select the most appropriate peak regions for differential binding analysis.
+
 ### **Step 1**
 
 **Normalize**
@@ -132,6 +162,13 @@ GNOMES norm \
   --outdir <output_directory> \
   --chrom-sizes <chrom_sizes.txt> \
   --mode <SE|PE>
+```
+
+**[OPTIONAL] — Explore candidate consensus peaks**
+```
+GNOMES consensus \
+  --meta <metadata.tsv> \
+  --outdir <output_directory>
 ```
 
 
@@ -145,7 +182,7 @@ GNOMES diff \
   --bigwig-dir <normalized_bigwig_directory> \
   --contrast <column:group1:group2> \
   --target <mark_or_TF> \
-  --outdir <diff_output_directory>
+  --outdir <output_directory>
 ```
 
 **Differential binding *on MACS2 consensus peaks***
@@ -167,6 +204,8 @@ With `--call-peaks`, the *MACS2* consensus peak pipeline is fully configurable v
 
 **Example 1 — Single-End (with blacklist) and Differential binding using user BED regions with DESEQ2**
 
+This example performs normalization of single-end Cut&Run/ChIP-seq data with blacklist filtering, then uses `GNOMES consensus` to generate multiple candidate consensus peak sets. After visual inspection (e.g., in IGV), the selected BED regions are used for DESeq2-based differential binding analysis.
+
 ```bash
 GNOMES norm \
   --meta meta/samples.tsv \
@@ -177,9 +216,13 @@ GNOMES norm \
   --mode SE \
   --se-fragment-length 200
 
+GNOMES consensus \
+  --meta meta/samples.tsv \
+  --outdir output/gnomes_run \
+
 GNOMES diff \
   --meta meta/samples.tsv \
-  --regions regions/promoters.bed \
+  --regions output/gnomes_run/02_consensus_beds/consensus*.bed \
   --bigwig-dir output/gnomes_run/06_normalized_bigwig \
   --contrast condition:KO:WT \
   --target H3K27me3 \
@@ -192,6 +235,8 @@ GNOMES diff \
 ```
 
 **Example 2 — Paired-End (without blacklist) and Differential binding using MACS2 consensus peaks with edgeR**
+
+This example performs normalization of paired-end data and runs differential binding directly with `GNOMES diff` using the built-in MACS2 consensus peak calling pipeline. This approach is useful for quick analyses, as peak regions are automatically generated without running `GNOMES consensus`.
 
 ```bash
 GNOMES norm \
@@ -217,6 +262,8 @@ GNOMES diff \
   --edger-min-counts 100 \
   --edger-norm TMM
 ```
+
+
 
 ## Choosing a differential method
 
@@ -291,7 +338,16 @@ PCA + correlation heatmap for raw and normalized bigWigs (per target)
 - `scaling_factors.tsv`
 P99 and scaling factor per sample
 - `GNOMES_norm.log`
-full command log (including all tool calls)
+full command log
+
+### [OPTIONAL] Step (Consensus peak exploration) output structure
+
+**`--outdir` contains**:
+- ` 01_macs2_peaks/` MACS2 peaks called on pooled BAMs per (condition, target)
+- `02_consensus_beds/` consensus peak BED files generated across combinations of MACS2 q-value thresholds and peak merge distances
+- `consensus_summary.tsv` summary table reporting peak statistics for each candidate consensus set (e.g., number of peaks, width statistics)
+- `consensus_width_distributions.pdf`  PDF showing peak width distributions for each candidate consensus peak set
+- `GNOMES_consensus.log` full command log
 
 
 ### Step 2 (Differential binding) output structure
@@ -317,8 +373,7 @@ significant regions split by direction
     - `PCA_vst_RAW_bigwig.pdf`
     - `sample_correlation_heatmap_RAW_bigwig.pdf`
 - `GNOMES_diff.log`
-full command log + exact tool calls for reproducibility
-
+full command log
 
 
 
