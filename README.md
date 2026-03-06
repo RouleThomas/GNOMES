@@ -29,7 +29,7 @@
 ***GNOMES*** is a user-friendly framework to:
 
 1. **Normalize** epigenomic signal tracks from BAM files using a robust percentile-based scaling strategy.
-2. **Perform differential binding analysis** over user-defined regions, or automatically generated peaks, using DESeq2 with built-in quality control.
+2. **Perform differential binding analysis** over user-defined regions, or automatically generated peaks, using DESeq2 (or edgeR) with built-in quality control.
 
 ***GNOMES*** is designed for **Cut&Run** and **ChIP-seq** (Single-End or Paired-End), and supports both histone marks and transcription factors.
 
@@ -40,12 +40,14 @@
 
 ***GNOMES*** is organized around three complementary commands:
 - `GNOMES norm` → signal normalization
-- **[OPTIONAL]** `GNOMES consensus` → exploration of candidate consensus peak sets
+- **[OPTIONAL]** `GNOMES consensus` → exploration of candidate consensus peak sets for differential binding analysis
 - `GNOMES diff` → differential binding analysis
 
 In most analyses, users run `GNOMES norm` followed by `GNOMES diff`. The **`GNOMES consensus` module is optional** and can be used to explore candidate peak sets and **help select the most appropriate regions for differential binding analysis**.
 
-
+<p align="center">
+  <img src="assets/GNOMES_pipeline1.png" alt="GNOMES pipeline" width="850">
+</p>
 
 ### **Step 1 — Normalization (`GNOMES norm`)**
 
@@ -340,7 +342,7 @@ P99 and scaling factor per sample
 - `GNOMES_norm.log`
 full command log
 
-### [OPTIONAL] Step (Consensus peak exploration) output structure
+### Step (Consensus peak exploration) output structure
 
 **`--outdir` contains**:
 - ` 01_macs2_peaks/` MACS2 peaks called on pooled BAMs per (condition, target)
