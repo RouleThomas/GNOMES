@@ -151,32 +151,39 @@ GNOMES diff --help
 
 ## Quick start
 
-GNOMES is a two-step pipeline: **normalize** first, then **diff**.
+GNOMES is a two-step pipeline: **normalize** first, then **differential binding**.
 
-An optional consensus peak exploration step can be run between them to help select the most appropriate peak regions for differential binding analysis.
+An optional **consensus peak exploration** step can be run between them to help select the most appropriate peak regions for differential binding analysis.
 
 ### **Step 1**
 
-**Normalize**
+
+**Normalize**: Generate normalized bigWig signal tracks from BAM files using the P99 scaling strategy.
+
 ```
 GNOMES norm \
   --meta <metadata.tsv> \
   --outdir <output_directory> \
-  --chrom-sizes <chrom_sizes.txt> \
+  --chrom-sizes <chrom_sizes.tab> \
   --mode <SE|PE>
 ```
+- `--mode SE|PE` specifies whether reads are Single-End (SE) or Paired-End (PE).
+- `--chrom-sizes` must match the genome assembly used for alignment.
+- Normalized bigWig files will be written to: `<output_directory>/06_normalized_bigwig/`. These tracks are used in downstream differential binding analysis.
 
-**[OPTIONAL] — Explore candidate consensus peaks**
+
+**[OPTIONAL] — Explore candidate consensus peaks**: Generate multiple candidate consensus peak sets by scanning different *MACS2* peak-calling thresholds and merge distances.
 ```
 GNOMES consensus \
   --meta <metadata.tsv> \
   --outdir <output_directory>
 ```
+This step helps identify robust peak regions for differential binding analysis. Candidate BED files can be visually inspected in IGV alongside the normalized bigWig tracks from Step 1.
 
 
 ### **Step 2**
 
-**Differential binding *using your own BED regions***
+**Differential binding *using your own BED regions***: Run differential binding analysis on predefined BED regions (e.g., promoters, enhancers, or consensus peaks generated with GNOMES consensus).
 ```
 GNOMES diff \
   --regions <regions.bed> \
@@ -186,8 +193,12 @@ GNOMES diff \
   --target <mark_or_TF> \
   --outdir <output_directory>
 ```
+- `--regions` provides the BED file containing regions to test.
+- `--contrast` defines the comparison in the format: `<metadata_column>:<group1>:<group2>`. For example `condition:KO:WT`
 
-**Differential binding *on MACS2 consensus peaks***
+
+**Differential binding *on MACS2 consensus peaks***: Alternatively, GNOMES can automatically generate consensus peaks during the differential binding step.
+
 ```
 GNOMES diff \
   --call-peaks \
@@ -200,7 +211,7 @@ GNOMES diff \
 
 With `--call-peaks`, the *MACS2* consensus peak pipeline is fully configurable via `--macs2-*` options. ***GNOMES*** automatically pools replicates per condition, and if `bam_control` is provided in the metadata, matching control BAMs are used during peak calling. The *deepTools* heatmap and profile plot are also fully configurable (`--hm-*` and `--pp-*` options).
 
-
+This approach is useful for quick exploratory analyses. However, for more robust results we recommend using peak regions generated with `GNOMES consensus`, which allows manual inspection and selection of the most appropriate peak set.
 
 ## Command examples
 
@@ -220,7 +231,7 @@ GNOMES norm \
 
 GNOMES consensus \
   --meta meta/samples.tsv \
-  --outdir output/gnomes_run \
+  --outdir output/gnomes_run
 
 GNOMES diff \
   --meta meta/samples.tsv \
@@ -281,19 +292,24 @@ In our experience, the following configurations are robust starting points:
 
 ## Inputs
 
-### Metadata file (`--meta`)
+### Metadata file (`--meta`; all steps)
 
 Tab-separated file with required columns:
 
 | column       | description                                    |
 | ------------ | ---------------------------------------------- |
 | `sample_id`  | unique sample name (used for output filenames) |
-| `bam`        | path to BAM file                               |
+| `bam`        | path to **BAM*** file                               |
 | `condition`  | condition label (ie. WT, KO)                   |
 | `target`     | mark/TF name (ie. H3K27me3, EZH2)              |
-| **OPTIONAL*** `bam_control` | path to BAM control (input/IGG) file           |
+| **OPTIONAL**** `bam_control` | path to BAM control (input/IGG) file           |
 
-***When provided, control sample is subtracted from corresponding IP sample**
+*To avoid artificial signal inflation in repetitive regions, we recommend using sorted BAM with uniquely aligned reads only.
+
+**When control BAM sample is provided, control sample is subtracted from corresponding IP sample
+
+
+
 
 Example:
 ```
@@ -310,14 +326,29 @@ KO_EZH2_2	/path/KO_EZH2_2.bam	KO	EZH2  /path/KO_input_2.bam
 
 
 
-### Regions BED (`--regions`, diff step only)
+### Chromosome sizes (`--chrom-sizes`; normalization step)
+
+Tab-separated file containing chromosome names and lengths.
+
+Example:
+```
+chr1    248956422
+chr2    242193529
+chr3    198295559
+chr4    190214555
+chr5    181538259
+```
+
+This file is used by *bedGraphToBigWig* to generate bigWig tracks. It must match the genome assembly used for read alignment.
+
+### Regions BED (`--regions`, diff step)
 
 Standard BED3:
 ```
-chr  start  end
+chr start end
 ```
 
-If you use `--call-peaks`, GNOMES builds regions automatically from MACS2 pooled-per-condition peaks.
+If you use `--call-peaks`, ***GNOMES*** builds regions automatically from *MACS2* pooled-per-condition peaks. However, we recommend using `GNOMES consensus` to generate candidate consensus peak sets and visually inspecting them (e.g., in IGV) against the normalized bigWig tracks to select the most appropriate regions for differential binding analysis.
 
 
 ## Outputs
