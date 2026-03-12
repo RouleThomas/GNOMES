@@ -14,6 +14,7 @@
   <a href="#workflow-and-methodology">Workflow and methodology</a> •
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick start</a> •
+  <a href="#manuscript-example-workflow">Manuscript example</a> •
   <a href="#command-examples">Command examples</a> •
   <a href="#choosing-a-differential-method">Choosing a differential method</a> •
   <a href="#inputs">Inputs</a> •
@@ -33,6 +34,9 @@
 
 ***GNOMES*** is designed for **Cut&Run** and **ChIP-seq** (Single-End or Paired-End), and supports both histone marks and transcription factors.
 
+>**Manuscript example workflow:**  
+>A step-by-step example reproducing the H3K27me3 mouse cerebellum analysis presented in the ***GNOMES*** manuscript is available in [`example_workflow/`](example_workflow/).
+
 ---
 
 
@@ -43,13 +47,16 @@
 - **[OPTIONAL]** `GNOMES consensus` → exploration of candidate consensus peak sets for differential binding analysis
 - `GNOMES diff` → differential binding analysis
 
-In most analyses, users run `GNOMES norm` followed by `GNOMES diff`. The **`GNOMES consensus` module is optional** and can be used to explore candidate peak sets and **help select the most appropriate regions for differential binding analysis**.
-
 <p align="center">
   <img src="assets/GNOMES_pipeline1.png" alt="GNOMES pipeline" width="850">
 </p>
 
+In most analyses, users run `GNOMES norm` followed by `GNOMES diff`. The **`GNOMES consensus` module is optional** and can be used to explore candidate peak sets and **help select the most appropriate regions for differential binding analysis**.
+
 ### **Step 1 — Normalization (`GNOMES norm`)**
+<p align="center">
+  <img src="assets/GNOMES_norm_diagram.png" alt="GNOMES norm diagram" width="850">
+</p>
 
 **Goal**: Generate scaled bigWig tracks across samples.
 
@@ -71,6 +78,9 @@ This percentile-based normalization is designed to stabilize signal distribution
 
 
 ### **[OPTIONAL] — Consensus peak exploration (`GNOMES consensus`)**
+<p align="center">
+  <img src="assets/GNOMES_consensus_diagram.png" alt="GNOMES consensus diagram" width="850">
+</p>
 
 **Goal**: Explore candidate consensus peak sets by scanning multiple MACS2 peak calling thresholds and merge distances.
 
@@ -89,6 +99,9 @@ This step can **help identify robust regions for downstream differential binding
 
 
 ### **Step 2 — Differential binding (`GNOMES diff`)**
+<p align="center">
+  <img src="assets/GNOMES_diff_diagram.png" alt="GNOMES diff diagram" width="850">
+</p>
 
 **Goal**: Identify regions with significant binding changes (ie. gained or lost) between biological conditions.
 
@@ -123,9 +136,8 @@ cd GNOMES
 # Installation
 ## Conda
 conda env create -f env/GNOMES-environment.yml
-## Mamba
-mamba env create -f env/GNOMES-environment.yml
 
+# Activate GNOMES conda environment
 conda activate GNOMES
 
 
@@ -146,12 +158,12 @@ GNOMES diff --help
 
 ***--> Soon available***
 
-
+---
 
 
 ## Quick start
 
-GNOMES is a two-step pipeline: **normalize** first, then **differential binding**.
+***GNOMES*** is a two-step pipeline: **normalize** first, then **differential binding**.
 
 An optional **consensus peak exploration** step can be run between them to help select the most appropriate peak regions for differential binding analysis.
 
@@ -212,6 +224,21 @@ GNOMES diff \
 With `--call-peaks`, the *MACS2* consensus peak pipeline is fully configurable via `--macs2-*` options. ***GNOMES*** automatically pools replicates per condition, and if `bam_control` is provided in the metadata, matching control BAMs are used during peak calling. The *deepTools* heatmap and profile plot are also fully configurable (`--hm-*` and `--pp-*` options).
 
 This approach is useful for quick exploratory analyses. However, for more robust results we recommend using peak regions generated with `GNOMES consensus`, which allows manual inspection and selection of the most appropriate peak set.
+
+---
+
+## Manuscript example workflow
+
+A complete example reproducing the H3K27me3 ChIPseq analysis from mouse cerebellum at P12 and P21 presented in the ***GNOMES*** manuscript is available in [`example_workflow/`](example_workflow/).
+
+The example includes:
+- Download of processed BAM and reference files
+- Metadata file preparation
+- Signal normalization with `GNOMES norm`
+- Consensus peak identification with `GNOMES consensus`
+- Differential binding analysis with `GNOMES diff`
+
+---
 
 ## Command examples
 
@@ -276,7 +303,7 @@ GNOMES diff \
   --edger-norm TMM
 ```
 
-
+---
 
 ## Choosing a differential method
 
@@ -289,6 +316,7 @@ In our experience, the following configurations are robust starting points:
 
 **If a global shift in occupancy is expected** (ie. near-complete gain or loss of a mark), we recommend using `--deseq2-sizefactors none` or `--edger-norm none`. By default, DESeq2 and edgeR apply median-based library normalization, which assumes that most regions are not changing. Disabling this step prevents correction toward the median and preserves true global shifts.
 
+---
 
 ## Inputs
 
@@ -350,6 +378,7 @@ chr start end
 
 If you use `--call-peaks`, ***GNOMES*** builds regions automatically from *MACS2* pooled-per-condition peaks. However, we recommend using `GNOMES consensus` to generate candidate consensus peak sets and visually inspecting them (e.g., in IGV) against the normalized bigWig tracks to select the most appropriate regions for differential binding analysis.
 
+---
 
 ## Outputs
 
@@ -408,12 +437,13 @@ significant regions split by direction
 - `GNOMES_diff.log`
 full command log
 
-
+---
 
 ## Contributing
 
 Contributions are welcome (bug reports and feature requests via *GitHub Issues*)! 
 
+---
 
 ## Citation
 

@@ -1,0 +1,128 @@
+
+# Example workflow used in the GNOMES manuscript
+
+This directory provides the commands used to reproduce the H3K27me3 ChIPseq analysis from mouse cerebellum at P12 and P21 presented in the ***GNOMES*** manuscript.
+
+## Table of Contents
+- [Download processed BAM files and reference files](#download-processed-bam-files-and-reference-files)
+- [Signal normalization](#signal-normalization)
+- [Consensus peak identification](#consensus-peak-identification)
+- [Differential binding analysis](#differential-binding-analysis)
+
+These steps may take some time; running on a high-performance computing (HPC) environment is recommended.
+
+>**Note:** ***GNOMES*** displays an animated walking gnome during long-running steps in interactive terminals. This can be disabled by adding `--no-walk` to any `GNOMES` command.
+---
+
+## Download processed BAM files and reference files
+
+The uniquely aligned, duplicate-removed BAM files used in the manuscript are available at [Zenodo](xxx).
+
+Download the processed BAM and corresponding index files:
+```bash
+mkdir -p bam
+cd bam
+
+wget -O P12_R1.bam "DIRECT_LINK"
+wget -O P12_R1.bam.bai "DIRECT_LINK"
+wget -O P12_R2.bam "DIRECT_LINK"
+wget -O P12_R2.bam.bai "DIRECT_LINK"
+```
+
+Next, download the reference files required by ***GNOMES***, including chromosome size information and the ENCODE blacklist regions for the mouse genome (mm10):
+
+```bash
+mkdir -p meta
+cd meta
+
+wget -O  mm10_chrom_sizes.tab
+wget -O  mm10-blacklist.v2.bed
+```
+
+---
+
+
+## Signal normalization
+
+First, create the metadata file describing the samples used in the analysis. In this example, input control libraries are provided for each IP sample.
+
+```bash
+nano meta/samples-P7vsP12_H3K27me3-input.tsv
+
+# Paste the following metadata table (make sure it is TAB-separated!)
+sample_id	bam	condition	target  bam_control
+P12_WT_H3K27me3_R1	bam/P12_WT_H3K27me3_R1.unique.dupmark.sorted.bam	P12	H3K27me3    bam/P12_WT_InputH3K27me3_R1R2.unique.dupmark.sorted.bam
+P12_WT_H3K27me3_R2	bam/P12_WT_H3K27me3_R2.unique.dupmark.sorted.bam	P12	H3K27me3    bam/P12_WT_InputH3K27me3_R1R2.unique.dupmark.sorted.bam
+P12_WT_H3K27me3_R3	bam/P12_WT_H3K27me3_R3.unique.dupmark.sorted.bam	P12	H3K27me3    bam/P12_WT_InputH3K27me3_R3.unique.dupmark.sorted.bam
+P12_WT_H3K27me3_R4	bam/P12_WT_H3K27me3_R4.unique.dupmark.sorted.bam	P12	H3K27me3    bam/P12_WT_InputH3K27me3_R4.unique.dupmark.sorted.bam
+P21_WT_H3K27me3_R1	bam/P21_WT_H3K27me3_R1.unique.dupmark.sorted.bam	P21	H3K27me3    bam/P21_WT_InputH3K27me3_R1R2.unique.dupmark.sorted.bam
+P21_WT_H3K27me3_R2	bam/P21_WT_H3K27me3_R2.unique.dupmark.sorted.bam	P21	H3K27me3    bam/P21_WT_InputH3K27me3_R1R2.unique.dupmark.sorted.bam
+P21_WT_H3K27me3_R3	bam/P21_WT_H3K27me3_R3.unique.dupmark.sorted.bam	P21	H3K27me3    bam/P21_WT_InputH3K27me3_R3.unique.dupmark.sorted.bam
+P21_WT_H3K27me3_R4	bam/P21_WT_H3K27me3_R4.unique.dupmark.sorted.bam	P21	H3K27me3    bam/P21_WT_InputH3K27me3_R4.unique.dupmark.sorted.bam
+P21_WT_H3K27me3_R5	bam/P21_WT_H3K27me3_R5.unique.dupmark.sorted.bam	P21	H3K27me3    bam/P21_WT_InputH3K27me3_R5.unique.dupmark.sorted.bam
+```
+
+Once the metadata file is prepared, run the ***GNOMES*** normalization step. 
+```bash
+mkdir -p output
+
+GNOMES norm \
+  --meta meta/samples-P7vsP12_H3K27me3-input.tsv \
+  --outdir output/GNOMES_norm-P7vsP12_H3K27me3-input \
+  --blacklist meta/mm10-blacklist.v2.bed \
+  --chrom-sizes meta/mm10_chrom_sizes.tab \
+  --mode SE
+```
+
+This step generates normalized bigWig tracks and quality-control metrics that can be used for downstream analysis and visualization.
+
+
+---
+
+
+## Consensus peak identification
+
+Next, we identify candidate consensus peak regions that will be used for differential binding analysis. Because H3K27me3 forms broad chromatin domains, peaks are called using the MACS2 broad peak mode. ***GNOMES*** tests multiple combinations of MACS2 significance thresholds and merge distances to generate several candidate consensus peak sets.
+
+```bash
+GNOMES consensus \
+  --meta meta/samples-P7vsP12_H3K27me3-input.tsv \
+  --outdir output/GNOMES_consensus-P7vsP12_H3K27me3-input \
+  --macs2-format BAM \
+  --macs2-gsize mm \
+  --macs2-mode broad \
+  --macs2-qvalue 0.01,0.001,0.0001,0.00001,0.000001 \
+  --macs2-merge 0,50,100,250,500
+```
+
+This step generates multiple candidate consensus BED files corresponding to all combinations of the tested MACS2 parameters. These candidate peak sets can be inspected visually in genome browser to select the most appropriate regions for downstream differential binding analysis.
+
+For the analysis presented in the manuscript, the consensus peak set generated with MACS2 q-value = 0.00001 and merge distance = 100bp was selected following manual inspection.
+
+---
+
+
+## Differential binding analysis
+
+Finally, differential binding analysis is performed by quantifying the normalized signal within the selected consensus peak regions and testing for differences between conditions. In this example, we use edgeR with upper-quartile scaling, an adjusted p-value threshold of 0.05, and a log2 fold-change cutoff of 0.58.
+
+```bash
+
+GNOMES diff \
+  --meta meta/samples-P7vsP12_H3K27me3-input.tsv \
+  --regions output/GNOMES_consensus-P7vsP12_H3K27me3-input/consensus.bed \
+  --bigwig-dir output/GNOMES_norm-P12vsP21_H3K27me3-input/06_normalized_bigwig \
+  --bigwig-dir-raw output/GNOMES_norm-P12vsP21_H3K27me3-input/01_raw_bigwig \
+  --contrast condition:P21:P12 \
+  --outdir output/GNOMES_diff-P12vsP21_H3K27me3-input-macs2broadq5merge100-edgerupperquartileq05fc058min100 \
+  --target H3K27me3 \
+  --diff-method edger \
+  --edger-alpha 0.05 \
+  --edger-lfc 0.58 \
+  --edger-min-counts 100 \
+  --edger-norm upperquartile
+
+```
+
+This step produces tables of differentially enriched regions, BED files for regions showing gain or loss of signal, and multiple diagnostic plots to evaluate the results.
+
