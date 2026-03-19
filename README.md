@@ -126,7 +126,7 @@ GNOMES supports two strategies:
 
 ## Installation
 
-### Option 1 — Conda (recommended)
+### Option 1 — Conda
 
 ```bash
 # Clone the repo
@@ -156,7 +156,32 @@ GNOMES diff --help
 
 ### Option 2 — Apptainer / Singularity
 
-***--> Soon available***
+**Use pre-built container** (recommended)
+```bash
+# Download container
+wget https://github.com/RouleThomas/GNOMES/releases/download/v1.0.0/GNOMES_v1.0.0.sif
+
+# Test
+apptainer exec GNOMES_v1.0.0.sif GNOMES norm --help
+apptainer exec GNOMES_v1.0.0.sif GNOMES consensus --help
+apptainer exec GNOMES_v1.0.0.sif GNOMES diff --help
+```
+
+**Build container from source**
+```bash
+# Clone the repo
+git clone https://github.com/RouleThomas/GNOMES.git
+cd GNOMES
+
+# Build container
+apptainer build GNOMES.sif GNOMES_apptainer.def
+
+# Test
+apptainer exec GNOMES.sif GNOMES norm --help
+apptainer exec GNOMES.sif GNOMES consensus --help
+apptainer exec GNOMES.sif GNOMES diff --help
+```
+
 
 ---
 

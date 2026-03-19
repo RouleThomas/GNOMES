@@ -1,0 +1,55 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+%files
+    . /opt/GNOMES
+
+%post
+    cd /opt/GNOMES
+
+    # system tools
+    apt-get update && apt-get install -y \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        && rm -rf /var/lib/apt/lists/*
+
+    # create env
+    micromamba env create -f env/GNOMES-environment.yml -n GNOMES
+
+    # add compilers inside env too
+    micromamba install -y -n GNOMES -c conda-forge \
+        gcc_linux-64 \
+        gxx_linux-64 \
+        make
+
+    # install GNOMES
+    micromamba run -n GNOMES pip install -e /opt/GNOMES
+
+    # set compilers explicitly
+    export CC=/opt/conda/envs/GNOMES/bin/x86_64-conda-linux-gnu-gcc
+    export CXX=/opt/conda/envs/GNOMES/bin/x86_64-conda-linux-gnu-g++
+
+    # MACS2 build deps: pin old Cython / NumPy
+    micromamba run -n GNOMES pip install --upgrade pip wheel "setuptools<81"
+    micromamba run -n GNOMES pip install "numpy==1.26.4" "Cython==0.29.37"
+
+    # install MACS2 from source
+    micromamba run -n GNOMES pip install --no-build-isolation --no-binary :all: MACS2==2.2.9.1
+
+    micromamba clean --all --yes
+
+%environment
+    export PATH=/opt/conda/envs/GNOMES/bin:$PATH
+    export LC_ALL=C
+    export LANG=C
+
+%runscript
+    exec GNOMES "$@"
+
+%test
+    GNOMES norm --help
+    GNOMES consensus --help
+    GNOMES diff --help
+    python -c "import MACS2.IO.ScoreTrack; print('OK')"
