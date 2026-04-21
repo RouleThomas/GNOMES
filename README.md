@@ -254,7 +254,7 @@ This approach is useful for quick exploratory analyses. However, for more robust
 
 ## Manuscript example workflow
 
-A complete example reproducing the H3K27me3 ChIPseq analysis from mouse cerebellum at P12 and P21 presented in the ***GNOMES*** manuscript is available in [`example_workflow/`](example_workflow/).
+A complete example reproducing the H3K27me3 ChIP-seq analysis from mouse cerebellum at P12 and P21 presented in the ***GNOMES*** manuscript is available in [`example_workflow/`](example_workflow/).
 
 The example includes:
 - Download of processed BAM and reference files
@@ -474,10 +474,6 @@ Contributions are welcome (bug reports and feature requests via *GitHub Issues*)
 
 If you use ***GNOMES*** in your work, please cite:
 
-***Roule T. et al. GNOMES: Genome-wide NOrmalization of Mapped Epigenomic Signals. [Journal] (YEAR).***
-
-(Preprint / DOI coming soon.)
-
-
+Thomas Roule and Naiara Akizu. **GNOMES: an integrated framework for genome-wide normalization and differential binding analysis of CUT&RUN and ChIP-seq data**. *bioRxiv* 2026. [doi.org/10.64898/2026.04.16.718722](https://www.biorxiv.org/content/10.64898/2026.04.16.718722v1)
 
 
