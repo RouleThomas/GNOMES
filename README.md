@@ -128,18 +128,18 @@ GNOMES supports two strategies:
 
 ### Option 1 — Conda
 
+#### Linux / Unix
+
 ```bash
 # Clone the repo
 git clone https://github.com/RouleThomas/GNOMES.git
 cd GNOMES
 
-# Installation
-## Conda
+# Create GNOMES conda environment for Linux / Unix
 conda env create -f env/GNOMES-environment.yml
 
 # Activate GNOMES conda environment
 conda activate GNOMES
-
 
 # Install dependencies
 pip install -e .
@@ -151,7 +151,30 @@ GNOMES consensus --help
 GNOMES diff --help
 ```
 
+#### macOS Apple Silicon / ARM64
 
+```bash
+# Clone the repo
+git clone https://github.com/RouleThomas/GNOMES.git
+cd GNOMES
+
+# Create GNOMES conda environment for macOS ARM64
+conda env create -f env/GNOMES-environment-macos.yml
+
+# Activate GNOMES conda environment
+conda activate GNOMES
+
+# Install GNOMES
+pip install -e .
+
+# Test
+GNOMES norm --help
+GNOMES consensus --help
+GNOMES diff --help
+```
+
+On macOS ARM64, MACS2 is installed through Bioconda inside `env/GNOMES-environment-macos.yml`.  
+No manual `pip install --no-binary :all: MACS2==2.2.9.1` step is required.
 
 
 ### Option 2 — Apptainer / Singularity

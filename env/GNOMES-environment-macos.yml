@@ -1,0 +1,43 @@
+name: GNOMES
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - python=3.10
+  - pip
+  - setuptools
+  - wheel
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib-base
+  - plotly
+  - pyyaml
+  - requests
+  - pybigwig
+  - pysam
+  - py2bit
+  - bedtools
+  - samtools
+  - htslib
+  - deeptools
+  - ucsc-bedgraphtobigwig
+  - ucsc-bigwigtobedgraph
+  - wiggletools
+  - jq
+  - yq
+  - macs2=2.2.9.1
+  - r-base
+  - r-optparse
+  - r-tidyverse
+  - r-data.table
+  - r-ggplot2
+  - r-ggrepel
+  - bioconductor-deseq2
+  - bioconductor-edger
+  - bioconductor-limma
+  - bioconductor-apeglm
+  - bioconductor-enhancedvolcano
+  - pip:
+      - cython<3
