@@ -520,6 +520,7 @@ def print_launch_summary(args, meta: Optional[pd.DataFrame] = None):
     lines.append(f"  - mode: {args.macs2_mode}")
     lines.append(f"  - format: {args.macs2_format}")
     lines.append(f"  - gsize: {args.macs2_gsize}")
+    lines.append(f"  - nolambda: {'YES' if args.macs2_nolambda else 'NO'}")
     lines.append(f"  - qvalue list: {args.macs2_qvalue}")
     lines.append(f"  - merge -d list: {args.macs2_merge}")
     lines.append("")
@@ -672,6 +673,15 @@ def main():
     macs.add_argument("--macs2-mode", default="broad", choices=["narrow", "broad"],
                     help="MACS2 peak type (default broad)")
 
+    macs.add_argument(
+        "--macs2-nolambda",
+        action="store_true",
+        help=(
+            "Disable MACS2 local lambda estimation (--nolambda). "
+            "Recommended for peak calling without a negative control (default disabled)"
+        )
+    )
+
     # -----------------------------
     # Consensus grid (qvalue x merge distance)
     # -----------------------------
@@ -815,6 +825,13 @@ def main():
                     else:
                         used_control_by_target_cond[(tgt, cond)] = False
 
+                    if not controls and not args.macs2_nolambda:
+                        log(
+                            f"WARNING: No MACS2 control provided for target={tgt}. "
+                            "Consider using --macs2-nolambda for control-free peak calling.",
+                            ctrl=ctrl
+                        )
+
                     tgt_slug = _safe_slug(tgt)
                     cond_slug = _safe_slug(cond)
 
@@ -824,8 +841,10 @@ def main():
                     name = f"target_{tgt_slug}__cond_{cond_slug}__{args.macs2_mode}"
 
                     cmd = ["macs2", "callpeak", "-t", *bams]
+
                     if controls:
                         cmd += ["-c", *controls]
+
                     cmd += [
                         "-f", args.macs2_format,
                         "--keep-dup", "auto",
@@ -834,8 +853,13 @@ def main():
                         "--outdir", outdir_tc,
                         "-n", name,
                     ]
+
+                    if args.macs2_nolambda:
+                        cmd.append("--nolambda")
+
                     if args.macs2_mode == "broad":
                         cmd.append("--broad")
+
 
                     run_cmd(cmd, log_fh=log_fh)
 
@@ -938,6 +962,7 @@ def main():
                                     "macs2_mode": args.macs2_mode,
                                     "macs2_format": args.macs2_format,
                                     "macs2_gsize": args.macs2_gsize,
+                                    "macs2_nolambda": args.macs2_nolambda,
                                     "qvalue": qv,
                                     "qscore_thr": qscore_thr,
                                     "merge_d": md,
@@ -1007,7 +1032,7 @@ def main():
             # nice ordering
             col_order = [
                 "target",
-                "macs2_mode", "macs2_format", "macs2_gsize",
+                "macs2_mode", "macs2_format", "macs2_gsize", "macs2_nolambda",
                 "qvalue", "qscore_thr", "merge_d", "bed",
                 "n_peaks",
                 "median_width", "mean_width", "sd_width",

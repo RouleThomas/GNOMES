@@ -64,7 +64,10 @@ In most analyses, users run `GNOMES norm` followed by `GNOMES diff`. The **`GNOM
 1. Convert BAM → raw bigWig → bedGraph (*optional* blacklist filtering + control(input/IGG) subtraction)
 2. Identify local maxima in each bedGraph
 3. Compute the 99th percentile (P99) of local signal maxima per sample
-4. Within each target, select a reference sample and compute scaling factor (SF): `SF(sample) = P99(reference_sample) / P99(sample)`
+4. Within each target, select a **reference*** sample and compute scaling factor (SF): `SF(sample) = P99(reference_sample) / P99(sample)`
+
+**Reference*: For each chromatin target, ***GNOMES*** uses the first sample listed in the metadata file as the reference for P99 scaling. The reference sample therefore has a scaling factor of 1, while all other samples are scaled relative to it. 
+
 5. Apply SF to generate normalized signal tracks
 
 **Outputs**:
@@ -84,6 +87,8 @@ This percentile-based normalization is designed to stabilize signal distribution
 
 **Goal**: Explore candidate consensus peak sets by scanning multiple MACS2 peak calling thresholds and merge distances.
 
+*Why optional?* `GNOMES diff` can analyze any user-provided genomic regions, including promoters, enhancers, previously defined peak sets, or other regions of interest supplied as a BED file. Therefore, the consensus module is not required when regions are already defined. However, for de novo peak-centric differential binding analysis, we recommend using `GNOMES consensus` to identify appropriate candidate regions across the conditions being compared.
+
 **Pipeline**:
 1. Pool BAM files per condition (and per target)
 2. Run MACS2 peak calling
@@ -97,6 +102,7 @@ This percentile-based normalization is designed to stabilize signal distribution
 
 This step can **help identify robust regions for downstream differential binding analysis**. We recommend loading multiple candidate consensus peak BED files into IGV and comparing them with the normalized bigWig tracks from **Step 1** to select the most appropriate peak set for downstream differential binding analysis.
 
+If no matched control (*bam_control*) is available, `--macs2-nolambda` can be used to disable MACS2 local lambda estimation for control-free peak calling.
 
 ### **Step 2 — Differential binding (`GNOMES diff`)**
 <p align="center">
